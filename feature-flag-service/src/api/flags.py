@@ -35,7 +35,7 @@ async def get_flag_by_key(
 ) -> FlagResponse:
     """Получить флаг по уникальному ключу."""
     flag = await flag_service.get_flag_by_key(db, key)
-    if not flag:
+    if flag is None:
         raise HTTPException(status_code=404, detail="Flag not found")
     return flag
 
@@ -48,7 +48,7 @@ async def update_flag(
 ) -> FlagResponse:
     """Обновить feature-флаг."""
     flag = await flag_service.get_flag_by_key(db, key)
-    if not flag:
+    if flag is None:
         raise HTTPException(status_code=404, detail="Flag not found")
     return await flag_service.update_flag(db, flag, data)
 
@@ -60,7 +60,7 @@ async def delete_flag(
 ) -> None:
     """Удалить feature-флаг."""
     flag = await flag_service.get_flag_by_key(db, key)
-    if not flag:
+    if flag is None:
         raise HTTPException(status_code=404, detail="Flag not found")
     await flag_service.delete_flag(db, flag)
     return None
@@ -78,7 +78,7 @@ async def create_variant(
 ) -> FlagVariantResponse:
     """Создать вариант A/B теста."""
     flag = await flag_service.get_flag_by_key(db, key)
-    if not flag:
+    if flag is None:
         raise HTTPException(status_code=404, detail="Flag not found")
     variant_data = data.model_dump()
     variant_data["flag_id"] = flag.id
@@ -96,7 +96,7 @@ async def get_variants(
 ) -> list[FlagVariantResponse]:
     """Получить список вариантов для флага."""
     flag = await flag_service.get_flag_by_key(db, key)
-    if not flag:
+    if flag is None:
         raise HTTPException(status_code=404, detail="Flag not found")
     variants = await flag_service.get_variants(db, flag.id)
     return variants
