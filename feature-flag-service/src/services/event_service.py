@@ -21,9 +21,9 @@ def _prepare_event_document(event: EventCreate) -> dict[str, Any]:
 
 
 def save_event(
-    mongo_client: MongoClient,
-    event: EventCreate,
-    collection_name: str = "events",
+        mongo_client: MongoClient,
+        event: EventCreate,
+        collection_name: str = "events",
 ) -> EventResponse:
     """Сохранить одно событие в MongoDB."""
     collection = mongo_client[collection_name]
@@ -34,9 +34,9 @@ def save_event(
 
 
 def save_events_batch(
-    mongo_client: MongoClient,
-    events: list[EventCreate],
-    collection_name: str = "events",
+        mongo_client: MongoClient,
+        events: list[EventCreate],
+        collection_name: str = "events",
 ) -> EventBatchResponse:
     """Сохранить пакет событий в MongoDB."""
     collection = mongo_client[collection_name]
