@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from src.api import flags, health, resolve
+from src.api import auth, flags, health, resolve
 
 app = FastAPI(
     title="Feature Flag Service",
@@ -9,6 +9,7 @@ app = FastAPI(
 )
 
 app.include_router(health.router, prefix="/api", tags=["health"])
+app.include_router(auth.router, tags=["auth"])
 app.include_router(flags.router, prefix="/api/flags", tags=["flags"])
 app.include_router(resolve.router, tags=["resolve"])
 
