@@ -23,7 +23,11 @@ def resolve_bucket(bucket: int, weights: list[float]) -> int:
     Returns:
         Индекс варианта, которому принадлежит bucket.
     """
+    if not weights:
+        return -1
     total_weight = sum(weights)
+    if total_weight == 0:
+        return len(weights) - 1
     cumulative = 0.0
     for index, weight in enumerate(weights):
         cumulative += (weight / total_weight) * 100
