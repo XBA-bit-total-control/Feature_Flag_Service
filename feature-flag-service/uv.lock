@@ -451,6 +451,19 @@ wheels = [
 ]
 
 [[package]]
+name = "email-validator"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dnspython" },
+    { name = "idna" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/22/900cb125c76b7aaa450ce02fd727f452243f2e91a61af068b40adba60ea9/email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426", size = 51238, upload-time = "2025-08-26T13:09:06.831Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/15/545e2b6cf2e3be84bc1ed85613edd75b8aea69807a71c26f4ca6a9258e82/email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4", size = 35604, upload-time = "2025-08-26T13:09:05.858Z" },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.143.0"
 source = { registry = "https://pypi.org/simple" }
@@ -474,12 +487,13 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "bcrypt" },
     { name = "celery" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "numpy" },
     { name = "passlib", extra = ["bcrypt"] },
-    { name = "pydantic" },
+    { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
     { name = "pymongo" },
     { name = "pytest" },
@@ -494,12 +508,13 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
     { name = "asyncpg", specifier = ">=0.32.0" },
+    { name = "bcrypt", specifier = ">=4.0.1" },
     { name = "celery", specifier = ">=5.6.3" },
     { name = "fastapi", specifier = ">=0.143.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
-    { name = "pydantic", specifier = ">=2.14.0" },
+    { name = "pydantic", extras = ["email"], specifier = ">=2.14.0" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pymongo", specifier = ">=4.18.2" },
     { name = "pytest", specifier = ">=9.1.1" },
@@ -968,6 +983,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6b/fb/6e44b63b26efea1cec48c26d8362313310202ef5ed6e7a52f1669e64e2cd/pydantic-2.14.0.tar.gz", hash = "sha256:8a51a7aaddd60f55566d1f07bdd87b92b463903f39a8f26b71a06314cd1548ae", size = 898613, upload-time = "2026-10-08T14:34:48.341Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/eb/9146591cc819d040475bf7f2be786710c7f7eb8083693bf859728da2ca9c/pydantic-2.14.0-py3-none-any.whl", hash = "sha256:15fab1bea6f1dc5003b54fc2ecab230c1fd1dbade2acd4addc52d81e32416d4b", size = 487109, upload-time = "2026-10-08T14:34:46.864Z" },
+]
+
+[package.optional-dependencies]
+email = [
+    { name = "email-validator" },
 ]
 
 [[package]]
