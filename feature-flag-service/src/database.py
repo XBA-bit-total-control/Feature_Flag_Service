@@ -1,13 +1,14 @@
+from typing import Any, AsyncGenerator
+
+from pymongo import MongoClient
+from pymongo.database import Database
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from pymongo import MongoClient
-from typing import AsyncGenerator
 
 from src.config import settings
-from src.models.base import Base
 
 
 # --- PostgreSQL (async) ---
@@ -59,6 +60,6 @@ def get_mongo_client() -> MongoClient:
     return mongo_client
 
 
-def get_mongo_database() -> object:
+def get_mongo_database() -> Database[dict[str, Any]]:
     """FastAPI dependency для получения MongoDB базы данных."""
     return mongo_database
