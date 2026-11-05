@@ -1,8 +1,9 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.database import Database
 
-from pymongo import MongoClient
-
-from src.database import get_mongo_client
+from src.database import get_mongo_database
 from src.schemas.event import (
     EventBatchCreate,
     EventBatchResponse,
@@ -11,13 +12,14 @@ from src.schemas.event import (
 )
 from src.services.event_service import save_event, save_events_batch
 
+
 router = APIRouter()
 
 
 @router.post("", response_model=EventBatchResponse, status_code=201)
 async def create_events(
         data: EventBatchCreate,
-        mongo: MongoClient = Depends(get_mongo_client),
+        mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
 ) -> EventBatchResponse:
     """Пакетная отправка событий в MongoDB."""
     response = save_events_batch(mongo, data.events)
@@ -31,7 +33,7 @@ async def create_events(
 )
 async def create_single_event(
         data: EventCreate,
-        mongo: MongoClient = Depends(get_mongo_client),
+        mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
 ) -> EventResponse:
     """Отправка одиночного события в MongoDB."""
     try:
