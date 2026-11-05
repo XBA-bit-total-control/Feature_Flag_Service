@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -6,13 +7,39 @@ from pydantic import BaseModel, Field
 class FlagCreate(BaseModel):
     """Схема для создания feature-флага."""
 
-    key: str = Field(..., min_length=1, max_length=255, description="Уникальный ключ флага")
-    description: str | None = Field(None, max_length=1000, description="Описание флага")
-    type: str = Field(default="simple", max_length=50, description="Тип флага (simple, ab)")
-    enabled: bool = Field(default=False, description="Активирован ли флаг")
-    rollout_percentage: int = Field(default=100, ge=0, le=100, description="Процент rollout (0-100)")
-    salt: str = Field(default="", max_length=100, description="Salt для детерминированного хеширования")
-    owner_id: UUID = Field(description="ID владельца флага")
+    key: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Уникальный ключ флага"
+    )
+    description: str | None = Field(
+        None,
+        max_length=1000,
+        description="Описание флага"
+    )
+    type: str = Field(
+        default="simple",
+        max_length=50,
+        description="Тип флага (simple, ab)"
+    )
+    enabled: bool = Field(
+        default=False,
+        description="Активирован ли флаг"
+    )
+    rollout_percentage: int = Field(
+        default=100,
+        ge=0,
+        le=100,
+        description="Процент rollout (0-100)"
+    )
+    salt: str = Field(
+        default="",
+        max_length=100,
+        description="Salt для детерминированного хеширования"
+    )
+
+    model_config = {"extra": "forbid"}
 
 
 class FlagUpdate(BaseModel):
@@ -24,7 +51,8 @@ class FlagUpdate(BaseModel):
     enabled: bool | None = None
     rollout_percentage: int | None = Field(None, ge=0, le=100)
     salt: str | None = Field(None, max_length=100)
-    owner_id: UUID | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class FlagResponse(BaseModel):
@@ -38,7 +66,7 @@ class FlagResponse(BaseModel):
     rollout_percentage: int
     salt: str
     owner_id: UUID
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
