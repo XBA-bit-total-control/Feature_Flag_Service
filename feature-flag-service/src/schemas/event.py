@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue, field_validator
 
 
 class EventCreate(BaseModel):
@@ -44,16 +44,28 @@ class EventCreate(BaseModel):
         ge=0,
         description="Значение события (например 1 для конверсии)",
     )
-    metadata: dict | None = Field(
+    metadata: dict[str, JsonValue] | None = Field(
         None,
         description="Дополнительный контекст (country, platform, session_id)",
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Временная метка события",
     )
 
-    model_config = {"from_attributes": True, "extra": "allow"}
+    @field_validator("timestamp")
+    @classmethod
+    def normalize_timestamp(cls, value: datetime) -> datetime:
+        """Привести дату к UTC, считая дату без часового пояса временем UTC."""
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    model_config = {
+        "from_attributes": True,
+        "extra": "forbid",
+        "allow_inf_nan": False,
+    }
 
 
 class EventResponse(BaseModel):
@@ -67,7 +79,7 @@ class EventResponse(BaseModel):
     variant_key: str | None
     event_name: str | None
     value: float | None
-    metadata: dict | None
+    metadata: dict[str, JsonValue] | None
     timestamp: datetime
 
     model_config = {"from_attributes": True}
