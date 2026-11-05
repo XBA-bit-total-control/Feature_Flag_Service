@@ -14,7 +14,7 @@ from src.services.event_service import save_event, save_events_batch
 router = APIRouter()
 
 
-@router.post("/", response_model=EventBatchResponse, status_code=201)
+@router.post("", response_model=EventBatchResponse, status_code=201)
 async def create_events(
         data: EventBatchCreate,
         mongo: MongoClient = Depends(get_mongo_client),
