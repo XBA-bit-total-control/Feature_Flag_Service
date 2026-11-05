@@ -1,8 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from pymongo import MongoClient
-
+from pymongo.database import Database
 from src.schemas.event import (
     EventBatchResponse,
     EventCreate,
@@ -12,37 +11,36 @@ from src.schemas.event import (
 
 def _prepare_event_document(event: EventCreate) -> dict[str, Any]:
     """Подготовить документ события для MongoDB."""
-    document = event.model_dump()
-    document["timestamp"] = datetime.utcnow()
+    document = event.model_dump(mode="json")
+    document["timestamp"] = event.timestamp
     document["processed"] = False
     document["processed_at"] = None
-    document["created_at"] = document["timestamp"]
+    document["created_at"] = datetime.now(timezone.utc)
     return document
 
 
 def save_event(
-        mongo_client: MongoClient,
+        mongo_database: Database[dict[str, Any]],
         event: EventCreate,
         collection_name: str = "events",
 ) -> EventResponse:
     """Сохранить одно событие в MongoDB."""
-    collection = mongo_client[collection_name]
+    collection = mongo_database[collection_name]
     document = _prepare_event_document(event)
     result = collection.insert_one(document)
-    document["_id"] = str(result.inserted_id)
-    return EventResponse(**document)
+    return EventResponse(id=str(result.inserted_id), **document)
 
 
 def save_events_batch(
-        mongo_client: MongoClient,
+        mongo_database: Database[dict[str, Any]],
         events: list[EventCreate],
         collection_name: str = "events",
 ) -> EventBatchResponse:
     """Сохранить пакет событий в MongoDB."""
-    collection = mongo_client[collection_name]
+    if not events:
+        return EventBatchResponse(accepted=0, rejected=0)
+    collection = mongo_database[collection_name]
     documents = [_prepare_event_document(event) for event in events]
-    if not documents:
-        return EventBatchResponse(accepted=0, rejected=len(events))
     result = collection.insert_many(documents, ordered=False)
     accepted = len(result.inserted_ids)
     rejected = len(events) - accepted
