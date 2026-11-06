@@ -1,24 +1,33 @@
 import os
 from collections.abc import AsyncIterator
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+import pytest_asyncio
+from pymongo import MongoClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from src.database import DATABASE_URL, get_async_session
+from src.api import events
+from src.config import settings
+from src.database import DATABASE_URL, get_async_session, get_mongo_database
 from src.main import app
 from src.models import Base, Flag, User
 from src.utils.jwt_handler import create_access_token
 
 
-@pytest.mark.skipif(
+pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_POSTGRES_INTEGRATION") != "1",
     reason="Нужна явно включённая проверка локальной PostgreSQL",
 )
-@pytest.mark.asyncio
-async def test_experiment_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
-    """API проверяет владельца, уникальность имени и переходы статусов."""
+
+
+@pytest_asyncio.fixture
+async def experiment_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[tuple[UUID, UUID, UUID]]:
+    """Подготовить изолированную схему PostgreSQL и тестовых владельцев."""
     engine = create_async_engine(DATABASE_URL)
     schema = f"codex_experiments_{uuid4().hex}"
     try:
@@ -58,14 +67,17 @@ async def test_experiment_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
                 monkeypatch.setitem(
                     app.dependency_overrides, get_async_session, test_session
                 )
-                await _check_lifecycle(flag.id, owner.id, other.id)
+                yield flag.id, owner.id, other.id
             finally:
                 await transaction.rollback()
     finally:
         await engine.dispose()
 
 
-async def _check_lifecycle(flag_id: UUID, owner_id: UUID, other_id: UUID) -> None:
+@pytest.mark.asyncio
+async def test_experiment_lifecycle(experiment_db: tuple[UUID, UUID, UUID]) -> None:
+    """API проверяет владельца, уникальность имени и переходы статусов."""
+    flag_id, owner_id, other_id = experiment_db
     transport = httpx.ASGITransport(app=app)
     owner = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
     other = {"Authorization": f"Bearer {create_access_token(str(other_id))}"}
@@ -138,3 +150,99 @@ async def _check_lifecycle(flag_id: UUID, owner_id: UUID, other_id: UUID) -> Non
         await request("PATCH", path, 409, json={"status": "running"})
         await request("DELETE", another_path, 204)
         await request("GET", another_path, 404)
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_MONGO_INTEGRATION") != "1",
+    reason="Нужна явно включённая проверка локальной MongoDB",
+)
+@pytest.mark.asyncio
+async def test_events_require_valid_experiment_links(
+    experiment_db: tuple[UUID, UUID, UUID], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Некорректные связи отклоняются до записи и публикации задачи."""
+    flag_id, owner_id, _ = experiment_db
+    headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    publish = Mock()
+    monkeypatch.setattr(events.celery_app, "send_task", publish)
+
+    with MongoClient(
+        host=settings.MONGO_HOST, port=settings.MONGO_PORT, serverSelectionTimeoutMS=3000
+    ) as mongo:
+        database = mongo[f"codex_event_links_{uuid4().hex}"]
+        collection = database["events"]
+        monkeypatch.setitem(app.dependency_overrides, get_mongo_database, lambda: database)
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                variant = await client.post(
+                    "/api/flags/checkout/variants", headers=headers,
+                    json={"flag_id": str(flag_id), "variant_key": "A", "weight": 1},
+                )
+                assert variant.status_code == 201, f"Вариант не создан: {variant.text}"
+                other_flag = await client.post(
+                    "/api/flags", headers=headers, json={"key": "other", "type": "ab"},
+                )
+                assert other_flag.status_code == 201, (
+                    f"Второй флаг не создан: {other_flag.text}"
+                )
+                foreign_variant = await client.post(
+                    "/api/flags/other/variants", headers=headers,
+                    json={"flag_id": other_flag.json()["id"], "variant_key": "B", "weight": 1},
+                )
+                assert foreign_variant.status_code == 201, (
+                    f"Вариант второго флага не создан: {foreign_variant.text}"
+                )
+                experiment = await client.post(
+                    "/api/experiments", headers=headers,
+                    json={"flag_id": str(flag_id), "name": "Checkout", "primary_metric": "click"},
+                )
+                assert experiment.status_code == 201, f"Эксперимент не создан: {experiment.text}"
+                experiment_id = experiment.json()["id"]
+                path = f"/api/experiments/{experiment_id}"
+                event = {
+                    "experiment_id": experiment_id, "flag_key": "checkout",
+                    "variant_key": "A", "event_type": "click", "user_id": "user-1",
+                }
+                draft = await client.post("/api/events/single", json=event)
+                assert draft.status_code == 422, f"Событие черновика принято: {draft.text}"
+                running = await client.patch(path, headers=headers, json={"status": "running"})
+                assert running.status_code == 200, f"Эксперимент не запущен: {running.text}"
+
+                for changes in (
+                    {"experiment_id": str(uuid4())}, {"flag_key": "wrong"},
+                    {"variant_key": "B"}, {"variant_key": None},
+                ):
+                    response = await client.post("/api/events/single", json={**event, **changes})
+                    assert response.status_code == 422, (
+                        f"Неверная связь {changes} не отклонена: {response.text}"
+                    )
+                mixed = await client.post(
+                    "/api/events", json={"events": [event, {**event, "variant_key": "B"}]},
+                )
+                assert mixed.status_code == 422 and "Событие 2" in mixed.json()["detail"], (
+                    f"Пакет должен указать второе событие: {mixed.text}"
+                )
+                count = collection.count_documents({})
+                assert count == 0, f"Невалидные запросы сохранили {count} документов"
+                assert publish.call_count == 0, "Невалидные запросы отправили задачу"
+
+                single = await client.post("/api/events/single", json=event)
+                batch = await client.post("/api/events", json={"events": [event, event]})
+                assert single.status_code == 201, f"Одиночное событие отклонено: {single.text}"
+                assert batch.status_code == 201, f"Корректный пакет отклонён: {batch.text}"
+                paused = await client.patch(path, headers=headers, json={"status": "paused"})
+                assert paused.status_code == 200, f"Не удалось приостановить: {paused.text}"
+                rejected = await client.post("/api/events/single", json=event)
+                assert rejected.status_code == 422, (
+                    f"Приостановленный эксперимент принял событие: {rejected.text}"
+                )
+                count = collection.count_documents({"experiment_id": experiment_id})
+                assert count == 3, f"Ожидалось три связанных события, получено {count}"
+                assert publish.call_count == 2, (
+                    f"Ожидались две задачи, отправлено {publish.call_count}"
+                )
+        finally:
+            collection.drop()
