@@ -15,7 +15,7 @@ class ExperimentCreate(BaseModel):
     description: str | None = None
     primary_metric: str = Field(min_length=1, max_length=255)
     alpha: float = Field(0.05, gt=0, lt=1)
-    min_sample_size: int | None = Field(None, gt=0)
+    min_sample_size: int | None = Field(None, gt=0, le=2**31 - 1, strict=True)
 
     model_config = {"extra": "forbid", "str_strip_whitespace": True}
 
@@ -27,7 +27,7 @@ class ExperimentUpdate(BaseModel):
     description: str | None = None
     primary_metric: str | None = Field(None, min_length=1, max_length=255)
     alpha: float | None = Field(None, gt=0, lt=1)
-    min_sample_size: int | None = Field(None, gt=0)
+    min_sample_size: int | None = Field(None, gt=0, le=2**31 - 1, strict=True)
 
     model_config = {"extra": "forbid", "str_strip_whitespace": True}
 
