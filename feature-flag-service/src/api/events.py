@@ -2,18 +2,22 @@ from typing import Any
 
 from bson.errors import InvalidDocument
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from kombu.exceptions import OperationalError
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, DocumentTooLarge, PyMongoError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.celery_app import app as celery_app
 from src.database import get_mongo_database
+from src.dependencies import get_db
 from src.schemas.event import (
     EventBatchCreate,
     EventBatchResponse,
     EventCreate,
     EventResponse,
 )
+from src.services.event_links import EventLinkError, validate_event_links
 from src.services.event_service import save_event, save_events_batch
 
 
@@ -40,28 +44,36 @@ def _mongo_write_error(error: Exception) -> HTTPException:
 
 
 @router.post("", response_model=EventBatchResponse, status_code=201)
-def create_events(
-        data: EventBatchCreate,
-        mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
+async def create_events(
+    data: EventBatchCreate,
+    mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
+    db: AsyncSession = Depends(get_db),
 ) -> EventBatchResponse:
     """Сохранить пакет событий. При ошибке часть пакета может быть записана."""
     try:
-        response = save_events_batch(mongo, data.events)
+        await validate_event_links(db, data.events)
+        response = await run_in_threadpool(save_events_batch, mongo, data.events)
+    except EventLinkError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     except (PyMongoError, InvalidDocument, OverflowError) as error:
         raise _mongo_write_error(error) from error
-    _schedule_processing()
+    await run_in_threadpool(_schedule_processing)
     return response
 
 
 @router.post("/single", response_model=EventResponse, status_code=201)
-def create_single_event(
-        data: EventCreate,
-        mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
+async def create_single_event(
+    data: EventCreate,
+    mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
+    db: AsyncSession = Depends(get_db),
 ) -> EventResponse:
     """Сохранить одиночное событие в MongoDB."""
     try:
-        response = save_event(mongo, data)
+        await validate_event_links(db, [data])
+        response = await run_in_threadpool(save_event, mongo, data)
+    except EventLinkError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     except (PyMongoError, InvalidDocument, OverflowError) as error:
         raise _mongo_write_error(error) from error
-    _schedule_processing()
+    await run_in_threadpool(_schedule_processing)
     return response
