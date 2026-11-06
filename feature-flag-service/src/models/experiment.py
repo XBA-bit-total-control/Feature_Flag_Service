@@ -1,22 +1,40 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
-from sqlalchemy import String, Text, DateTime, func, Float, ForeignKey
+from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin
+
+
+class ExperimentStatus(StrEnum):
+    DRAFT = "draft"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    STOPPED = "stopped"
 
 
 class Experiment(Base, TimestampMixin):
     """Эксперименты (A/B тесты)."""
 
     __tablename__ = "experiments"
+    __table_args__ = (
+        CheckConstraint("min_sample_size > 0", name="ck_experiments_min_sample_size"),
+        CheckConstraint("alpha > 0 AND alpha < 1", name="ck_experiments_alpha"),
+        CheckConstraint(
+            "status IN ('draft', 'running', 'paused', 'completed', 'stopped')",
+            name="ck_experiments_status",
+        ),
+    )
 
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default=ExperimentStatus.DRAFT, nullable=False)
     primary_metric: Mapped[str] = mapped_column(String(255), nullable=False)
     alpha: Mapped[float] = mapped_column(Float, default=0.05, nullable=False)
+    min_sample_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     flag_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("flags.id"), nullable=False)
     creator_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
