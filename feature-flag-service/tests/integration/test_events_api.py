@@ -1,9 +1,11 @@
 import os
+from unittest.mock import Mock
 from uuid import uuid4
 
 import httpx
 import pytest
 from bson import ObjectId
+from kombu.exceptions import OperationalError
 from pymongo import MongoClient
 from pymongo.errors import BulkWriteError, ServerSelectionTimeoutError
 
@@ -12,6 +14,7 @@ from src.config import settings
 from src.database import get_mongo_database
 from src.event_indexes import ensure_event_indexes
 from src.main import app
+from src.tasks import event_tasks
 
 
 EVENT = {"event_type": "click", "flag_key": "checkout", "user_id": "user-1"}
@@ -34,6 +37,9 @@ async def test_events_api_writes_documents_and_creates_indexes(monkeypatch) -> N
         monkeypatch.setitem(
             app.dependency_overrides, get_mongo_database, lambda: database
         )
+        publish = Mock(side_effect=[None, OperationalError("broker unavailable")])
+        monkeypatch.setattr(events.celery_app, "send_task", publish)
+        monkeypatch.setattr(event_tasks, "get_mongo_database", lambda: database)
         try:
             ensure_event_indexes(database)
             ensure_event_indexes(database)
@@ -77,6 +83,28 @@ async def test_events_api_writes_documents_and_creates_indexes(monkeypatch) -> N
             )
             count = collection.count_documents({"user_id": EVENT["user_id"]})
             assert count == 3, f"Ожидались три документа пользователя, получено {count}"
+            assert publish.call_count == 2, (
+                f"Ожидались две попытки публикации, получено {publish.call_count}"
+            )
+            processed = event_tasks.process_pending_events.run()
+            assert processed == 3, (
+                f"Ожидалась обработка трёх сохранённых событий, получено {processed}"
+            )
+            timestamps = {
+                event["_id"]: event["processed_at"]
+                for event in collection.find({"processed": True})
+            }
+            assert len(timestamps) == 3 and all(timestamps.values()), (
+                "Все три обработанных события должны получить время обработки"
+            )
+            repeated = event_tasks.process_pending_events.run()
+            assert repeated == 0, (
+                f"Повторная обработка должна обновить ноль событий, получено {repeated}"
+            )
+            assert timestamps == {
+                event["_id"]: event["processed_at"]
+                for event in collection.find({"processed": True})
+            }, "Повтор задачи изменил время обработки уже учтённых событий"
         finally:
             collection.drop()
 
