@@ -24,6 +24,62 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.asyncio
+async def test_resolve_api_with_experiment(
+    experiment_db: tuple[UUID, UUID, UUID],
+) -> None:
+    """Resolve проверяет доступность флага и связь с запущенным экспериментом."""
+    flag_id, owner_id, _ = experiment_db
+    headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        async def resolve(key="checkout", **kwargs):
+            return await client.post(
+                "/resolve", json={"flag_key": key, "user_identifier": "u1", **kwargs}
+            )
+
+        disabled = await resolve()
+        assert disabled.status_code == 200 and not disabled.json()["enabled"], (
+            f"Выключенный флаг должен быть недоступен: {disabled.text}"
+        )
+        await client.patch("/api/flags/checkout", headers=headers, json={"enabled": True})
+        inactive = await resolve()
+        assert inactive.json()["reason"] == "no_active_experiment", (
+            f"Флаг без запущенного эксперимента не должен назначать вариант: {inactive.text}"
+        )
+        for key in ("A", "B"):
+            variant = await client.post(
+                "/api/flags/checkout/variants", headers=headers,
+                json={"flag_id": str(flag_id), "variant_key": key},
+            )
+            assert variant.status_code == 201, f"Вариант не создан: {variant.text}"
+        created = await client.post("/api/experiments", headers=headers, json={
+            "flag_id": str(flag_id), "name": "Resolve", "primary_metric": "click",
+        })
+        assert created.status_code == 201, f"Эксперимент не создан: {created.text}"
+        experiment_id = created.json()["id"]
+        path = f"/api/experiments/{experiment_id}"
+        started = await client.patch(path, headers=headers, json={"status": "running"})
+        assert started.status_code == 200, f"Эксперимент не запущен: {started.text}"
+        first, second = await resolve(), await resolve()
+        assert first.status_code == 200 and first.json() == second.json(), (
+            f"Повтор запроса изменил назначение: {first.text}, {second.text}"
+        )
+        result = first.json()
+        assert result["enabled"] and result["experiment_id"] == experiment_id, (
+            f"Не возвращён запущенный эксперимент: {result}"
+        )
+        assert result["variant"] == result["variant_key"] in ("A", "B"), (
+            f"Старое и новое поля варианта не согласованы: {result}"
+        )
+        await client.patch(path, headers=headers, json={"status": "paused"})
+        paused = await resolve()
+        assert not paused.json()["enabled"], "Приостановленный эксперимент назначил вариант"
+        missing = await resolve("missing")
+        assert missing.status_code == 404, f"Неизвестный флаг дал {missing.status_code}"
+
+
 @pytest_asyncio.fixture
 async def experiment_db(
     monkeypatch: pytest.MonkeyPatch,
