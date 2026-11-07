@@ -1,7 +1,6 @@
 import uuid
-from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, func, Float, Integer, ForeignKey
+from sqlalchemy import Boolean, String, Float, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin
@@ -19,6 +18,10 @@ class ExperimentResult(Base, TimestampMixin):
     conversion_rate: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     z_statistic: Mapped[float | None] = mapped_column(Float, nullable=True)
     p_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence_interval_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence_interval_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_significant: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    enough_data: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     # Relationships
     experiment: Mapped["Experiment"] = relationship("Experiment", back_populates="results")
