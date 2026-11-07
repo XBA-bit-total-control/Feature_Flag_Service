@@ -1,5 +1,4 @@
 import hashlib
-import struct
 
 
 def deterministic_hash(user_id: str, flag_key: str, salt: str) -> int:
@@ -9,7 +8,7 @@ def deterministic_hash(user_id: str, flag_key: str, salt: str) -> int:
     """
     message = f"{user_id}:{flag_key}:{salt}"
     hash_bytes = hashlib.sha256(message.encode("utf-8")).digest()
-    hash_int = struct.unpack("I", hash_bytes[:4])[0]
+    hash_int = int.from_bytes(hash_bytes[:4], byteorder="little")
     return hash_int % 100
 
 
