@@ -9,7 +9,7 @@ app = Celery(
     "feature_flag_service",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["src.tasks.event_tasks"],
+    include=["src.tasks.event_tasks", "src.tasks.statistics_tasks"],
 )
 app.conf.update(
     task_default_queue="events",
@@ -18,6 +18,13 @@ app.conf.update(
     accept_content=["json"],
     broker_connection_timeout=3,
     broker_connection_retry_on_startup=False,
+    task_routes={"analytics.calculate_statistics": {"queue": "analytics"}},
+    beat_schedule={
+        "calculate-statistics": {
+            "task": "analytics.calculate_statistics",
+            "schedule": 1800.0,
+        },
+    },
 )
 
 
