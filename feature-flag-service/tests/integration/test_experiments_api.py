@@ -15,6 +15,7 @@ from src.database import DATABASE_URL, get_async_session, get_mongo_database
 from src.main import app
 from src.models import Base, Flag, User
 from src.utils.jwt_handler import create_access_token
+from src.celery_app import app as celery_app
 
 
 pytestmark = pytest.mark.skipif(
@@ -246,3 +247,83 @@ async def test_events_require_valid_experiment_links(
                 )
         finally:
             collection.drop()
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_MONGO_INTEGRATION") != "1",
+    reason="Нужна явно включённая проверка MongoDB",
+)
+@pytest.mark.asyncio
+async def test_statistics_results_api(
+    experiment_db: tuple[UUID, UUID, UUID], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Результаты сохраняются без дубликатов и доступны только владельцу."""
+    flag_id, owner_id, other_id = experiment_db
+    headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    foreign = {"Authorization": f"Bearer {create_access_token(str(other_id))}"}
+    with MongoClient(
+        host=settings.MONGO_HOST, port=settings.MONGO_PORT, serverSelectionTimeoutMS=3000
+    ) as mongo:
+        database = mongo[f"codex_statistics_{uuid4().hex}"]
+        monkeypatch.setitem(app.dependency_overrides, get_mongo_database, lambda: database)
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test",
+                headers=headers,
+            ) as client:
+                for key in ("A", "B"):
+                    response = await client.post(
+                        "/api/flags/checkout/variants",
+                        json={"flag_id": str(flag_id), "variant_key": key},
+                    )
+                    assert response.status_code == 201, f"Не создан вариант: {response.text}"
+                response = await client.post("/api/experiments", json={
+                    "flag_id": str(flag_id), "name": "Statistics", "primary_metric": "buy",
+                })
+                assert response.status_code == 201, f"Не создан эксперимент: {response.text}"
+                experiment_id = response.json()["id"]
+                path = f"/api/experiments/{experiment_id}"
+                response = await client.patch(path, json={"status": "running"})
+                assert response.status_code == 200, f"Не запущен эксперимент: {response.text}"
+                empty = await client.post(path + "/results")
+                assert empty.status_code == 200, f"Ошибка пустого расчёта: {empty.text}"
+                assert all(not row["enough_data"] for row in empty.json()), (
+                    "Пустая выборка ошибочно отмечена как достаточная"
+                )
+                from datetime import datetime, timedelta, timezone
+                start = datetime.now(timezone.utc)
+                for key, successes in (("A", 10), ("B", 20)):
+                    for i in range(100):
+                        data = {
+                            "experiment_id": experiment_id, "flag_key": "checkout",
+                            "variant_key": key, "user_id": f"{key}-{i}",
+                            "event_type": "impression", "timestamp": start,
+                        }
+                        database.events.insert_one(dict(data))
+                        if i < successes:
+                            database.events.insert_one({
+                                **data, "event_type": "conversion", "event_name": "buy",
+                                "timestamp": start + timedelta(seconds=1),
+                            })
+                for _ in range(2):
+                    result = await client.post(path + "/results")
+                    assert result.status_code == 200, f"Расчёт не выполнен: {result.text}"
+                    rows = result.json()
+                    assert [r["conversions"] for r in rows] == [10, 20], (
+                        f"Ожидались 10 и 20 конверсий, получено {rows}"
+                    )
+                saved = await client.get(path + "/results")
+                assert saved.status_code == 200 and len(saved.json()) == 2, (
+                    f"Ожидался один снимок из двух строк: {saved.text}"
+                )
+                denied = await client.get(path + "/results", headers=foreign)
+                assert denied.status_code == 403, f"Чужие результаты доступны: {denied.text}"
+                state = await client.get(path)
+                assert state.json()["status"] == "running", (
+                    "Статистика самопроизвольно завершила эксперимент"
+                )
+                assert celery_app.conf.beat_schedule["calculate-statistics"]["schedule"] == 1800, (
+                    "Статистика должна запускаться каждые 30 минут"
+                )
+        finally:
+            database.events.drop()
