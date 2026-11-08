@@ -3,12 +3,10 @@ from typing import Any
 from bson.errors import InvalidDocument
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from kombu.exceptions import OperationalError
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, DocumentTooLarge, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.celery_app import app as celery_app
 from src.database import get_mongo_database
 from src.dependencies import get_db
 from src.schemas.event import (
@@ -18,19 +16,10 @@ from src.schemas.event import (
     EventResponse,
 )
 from src.services.event_links import EventLinkError, validate_event_links
-from src.services.event_service import save_event, save_events_batch
+from src.services.event_service import save_event, save_events_batch, schedule_processing
 
 
 router = APIRouter()
-
-
-def _schedule_processing() -> None:
-    """Поставить задачу после записи событий, если брокер доступен."""
-    try:
-        celery_app.send_task("events.process_pending", retry=False, ignore_result=True)
-    except OperationalError:
-        # Необработанные документы остаются доступны для повторной постановки.
-        pass
 
 
 def _mongo_write_error(error: Exception) -> HTTPException:
@@ -57,7 +46,7 @@ async def create_events(
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (PyMongoError, InvalidDocument, OverflowError) as error:
         raise _mongo_write_error(error) from error
-    await run_in_threadpool(_schedule_processing)
+    await run_in_threadpool(schedule_processing)
     return response
 
 
@@ -75,5 +64,5 @@ async def create_single_event(
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (PyMongoError, InvalidDocument, OverflowError) as error:
         raise _mongo_write_error(error) from error
-    await run_in_threadpool(_schedule_processing)
+    await run_in_threadpool(schedule_processing)
     return response
