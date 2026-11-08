@@ -2,11 +2,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 from pymongo.database import Database
+from kombu.exceptions import OperationalError
+from src.celery_app import app as celery_app
 from src.schemas.event import (
     EventBatchResponse,
     EventCreate,
     EventResponse,
 )
+
+
+def schedule_processing() -> None:
+    """Поставить задачу после записи событий, если брокер доступен."""
+    try:
+        celery_app.send_task("events.process_pending", retry=False, ignore_result=True)
+    except OperationalError:
+        # Сохранённые события можно поставить в обработку повторно.
+        pass
 
 
 def _prepare_event_document(event: EventCreate) -> dict[str, Any]:
