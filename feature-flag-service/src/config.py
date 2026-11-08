@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from typing import Optional
 
 
@@ -30,8 +31,9 @@ class Settings(BaseSettings):
     LLM_API_KEY: Optional[str] = None
     LLM_API_BASE_URL: str = "https://api.openai.com/v1"
     LLM_MODEL: str = "gpt-4o-mini"
-    LLM_TIMEOUT: int = 30
-    LLM_MAX_RETRIES: int = 2
+    LLM_TIMEOUT: int = Field(30, gt=0)
+    LLM_MAX_RETRIES: int = Field(2, ge=0, le=5)
+    LLM_MAX_OUTPUT_TOKENS: int = Field(1100, ge=1, le=4096)
 
     # Celery
     CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672/"
