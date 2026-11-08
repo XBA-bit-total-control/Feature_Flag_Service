@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncIterator
 from unittest.mock import Mock
+from kombu.exceptions import OperationalError
 from uuid import UUID, uuid4
 
 import httpx
@@ -9,13 +10,16 @@ import pytest_asyncio
 from pymongo import MongoClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from src.api import events
 from src.config import settings
 from src.database import DATABASE_URL, get_async_session, get_mongo_database
 from src.main import app
 from src.models import Base, Flag, User
 from src.utils.jwt_handler import create_access_token
 from src.celery_app import app as celery_app
+from src.services import event_service
+from src.tasks import event_tasks
+from src.api import resolve as resolve_api
+from pymongo.errors import ServerSelectionTimeoutError
 
 
 pytestmark = pytest.mark.skipif(
@@ -24,12 +28,102 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_MONGO_INTEGRATION") != "1",
+    reason="Нужна явно включённая проверка MongoDB",
+)
+@pytest.mark.asyncio
+async def test_resolve_impression_to_statistics(
+    experiment_db: tuple[UUID, UUID, UUID], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Повторные показы и конверсии дают одного участника в статистике."""
+    flag_id, owner_id, _ = experiment_db
+    headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    publish = Mock(side_effect=OperationalError("broker unavailable"))
+    monkeypatch.setattr(event_service.celery_app, "send_task", publish)
+    with MongoClient(
+        host=settings.MONGO_HOST, port=settings.MONGO_PORT, serverSelectionTimeoutMS=3000
+    ) as mongo:
+        database = mongo[f"codex_impressions_{uuid4().hex}"]
+        monkeypatch.setitem(app.dependency_overrides, get_mongo_database, lambda: database)
+        monkeypatch.setattr(event_tasks, "get_mongo_database", lambda: database)
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                payload = {"flag_key": "checkout", "user_id": "u1"}
+                disabled = await client.post("/resolve", json=payload)
+                assert disabled.status_code == 200, f"Ошибка resolve: {disabled.text}"
+                assert database.events.count_documents({}) == 0, (
+                    "Выключенный флаг создал impression"
+                )
+                for key in ("A", "B"):
+                    variant = await client.post(
+                        "/api/flags/checkout/variants", headers=headers,
+                        json={"flag_id": str(flag_id), "variant_key": key},
+                    )
+                    assert variant.status_code == 201, f"Не создан вариант: {variant.text}"
+                experiment = await client.post("/api/experiments", headers=headers, json={
+                    "flag_id": str(flag_id), "name": "Impressions", "primary_metric": "buy",
+                })
+                assert experiment.status_code == 201, f"Ошибка создания: {experiment.text}"
+                path = f"/api/experiments/{experiment.json()['id']}"
+                await client.patch(path, headers=headers, json={"status": "running"})
+                await client.patch(
+                    "/api/flags/checkout", headers=headers, json={"enabled": True}
+                )
+                first = await client.post("/resolve", json=payload)
+                second = await client.post("/resolve", json=payload)
+                assert first.status_code == second.status_code == 200, (
+                    f"Сбой брокера повлиял на назначение: {first.text}, {second.text}"
+                )
+                result = first.json()
+                shows = list(database.events.find({"event_type": "impression"}))
+                assert len(shows) == 2 and all(
+                    show["variant_key"] == result["variant"] for show in shows
+                ), "Не сохранены два показа назначенного варианта"
+                conversion = {
+                    **payload, "experiment_id": result["experiment_id"],
+                    "variant_key": result["variant"], "event_type": "conversion",
+                    "event_name": "buy",
+                }
+                batch = await client.post(
+                    "/api/events", json={"events": [conversion, conversion]}
+                )
+                assert batch.status_code == 201, f"Конверсии не приняты: {batch.text}"
+                assert event_tasks.process_pending_events.run() == 4, (
+                    "Воркер должен обработать два показа и две конверсии"
+                )
+                stats = await client.post(path + "/results", headers=headers)
+                assert stats.status_code == 200, f"Расчёт не выполнен: {stats.text}"
+                rows = stats.json()
+                assert sum(row["sample_size"] for row in rows) == 1, (
+                    f"Повторные показы увеличили число участников: {rows}"
+                )
+                assert sum(row["conversions"] for row in rows) == 1, (
+                    f"Повторные конверсии увеличили число успехов: {rows}"
+                )
+                monkeypatch.setattr(
+                    resolve_api, "save_event",
+                    Mock(side_effect=ServerSelectionTimeoutError("internal host")),
+                )
+                failed = await client.post("/resolve", json=payload)
+                assert failed.status_code == 503 and "internal host" not in failed.text, (
+                    f"Некорректная обработка отказа MongoDB: {failed.text}"
+                )
+        finally:
+            database.events.drop()
+
+
 @pytest.mark.asyncio
 async def test_resolve_api_with_experiment(
     experiment_db: tuple[UUID, UUID, UUID],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Resolve проверяет доступность флага и связь с запущенным экспериментом."""
     flag_id, owner_id, _ = experiment_db
+    monkeypatch.setattr(resolve_api, "save_event", Mock())
+    monkeypatch.setattr(resolve_api, "schedule_processing", Mock())
     headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -221,7 +315,7 @@ async def test_events_require_valid_experiment_links(
     flag_id, owner_id, _ = experiment_db
     headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
     publish = Mock()
-    monkeypatch.setattr(events.celery_app, "send_task", publish)
+    monkeypatch.setattr(event_service.celery_app, "send_task", publish)
 
     with MongoClient(
         host=settings.MONGO_HOST, port=settings.MONGO_PORT, serverSelectionTimeoutMS=3000
