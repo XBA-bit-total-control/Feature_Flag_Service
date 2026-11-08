@@ -10,6 +10,7 @@ from pymongo import MongoClient
 from pymongo.errors import BulkWriteError, ServerSelectionTimeoutError
 
 from src.api import events
+from src.services import event_service
 from src.config import settings
 from src.database import get_mongo_database
 from src.event_indexes import ensure_event_indexes
@@ -38,7 +39,7 @@ async def test_events_api_writes_documents_and_creates_indexes(monkeypatch) -> N
             app.dependency_overrides, get_mongo_database, lambda: database
         )
         publish = Mock(side_effect=[None, OperationalError("broker unavailable")])
-        monkeypatch.setattr(events.celery_app, "send_task", publish)
+        monkeypatch.setattr(event_service.celery_app, "send_task", publish)
         monkeypatch.setattr(event_tasks, "get_mongo_database", lambda: database)
         try:
             ensure_event_indexes(database)
