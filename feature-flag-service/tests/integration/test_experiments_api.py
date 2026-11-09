@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncIterator
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from kombu.exceptions import OperationalError
 from uuid import UUID, uuid4
 
@@ -17,6 +17,8 @@ from src.models import Base, Flag, User
 from src.utils.jwt_handler import create_access_token
 from src.celery_app import app as celery_app
 from src.services import event_service
+from src.services import report_service
+from src.services.experiment_reports_service import complete_report, save_automatic_report
 from src.tasks import event_tasks
 from src.api import resolve as resolve_api
 from pymongo.errors import ServerSelectionTimeoutError
@@ -409,6 +411,19 @@ async def test_statistics_results_api(
 ) -> None:
     """Результаты сохраняются без дубликатов и доступны только владельцу."""
     flag_id, owner_id, other_id = experiment_db
+    publish = Mock(side_effect=OperationalError("broker unavailable"))
+    monkeypatch.setattr(celery_app, "send_task", publish)
+
+    # Подмена точки вызова оставляет реализацию шаблонного клиента доступной.
+    original_generate = report_service.generate_report
+
+    async def offline_report(context):
+        return await original_generate(
+            context, settings.model_copy(update={"LLM_API_KEY": None})
+        )
+
+    generator = AsyncMock(side_effect=offline_report)
+    monkeypatch.setattr(report_service, "generate_report", generator)
     headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
     foreign = {"Authorization": f"Bearer {create_access_token(str(other_id))}"}
     with MongoClient(
@@ -433,6 +448,11 @@ async def test_statistics_results_api(
                 assert response.status_code == 201, f"Не создан эксперимент: {response.text}"
                 experiment_id = response.json()["id"]
                 path = f"/api/experiments/{experiment_id}"
+                no_template = await client.get(path + "/template/reports")
+                no_llm = await client.post(path + "/llm/reports")
+                assert no_template.status_code == no_llm.status_code == 409, (
+                    f"Без результатов оба маршрута должны вернуть 409: {no_template.text}, {no_llm.text}"
+                )
                 response = await client.patch(path, json={"status": "running"})
                 assert response.status_code == 200, f"Не запущен эксперимент: {response.text}"
                 empty = await client.post(path + "/results")
@@ -442,7 +462,7 @@ async def test_statistics_results_api(
                 )
                 from datetime import datetime, timedelta, timezone
                 start = datetime.now(timezone.utc)
-                for key, successes in (("A", 10), ("B", 20)):
+                for key, successes in (("A", 10), ("B", 30)):
                     for i in range(100):
                         data = {
                             "experiment_id": experiment_id, "flag_key": "checkout",
@@ -459,8 +479,8 @@ async def test_statistics_results_api(
                     result = await client.post(path + "/results")
                     assert result.status_code == 200, f"Расчёт не выполнен: {result.text}"
                     rows = result.json()
-                    assert [r["conversions"] for r in rows] == [10, 20], (
-                        f"Ожидались 10 и 20 конверсий, получено {rows}"
+                    assert [r["conversions"] for r in rows] == [10, 30], (
+                        f"Ожидались 10 и 30 конверсий, получено {rows}"
                     )
                 saved = await client.get(path + "/results")
                 assert saved.status_code == 200 and len(saved.json()) == 2, (
@@ -475,5 +495,58 @@ async def test_statistics_results_api(
                 assert celery_app.conf.beat_schedule["calculate-statistics"]["schedule"] == 1800, (
                     "Статистика должна запускаться каждые 30 минут"
                 )
+                denied_template = await client.get(path + "/template/reports", headers=foreign)
+                denied_llm = await client.post(path + "/llm/reports", headers=foreign)
+                assert denied_template.status_code == denied_llm.status_code == 403, (
+                    f"Чужому владельцу доступны отчёты: {denied_template.text}, {denied_llm.text}"
+                )
+                template = await client.get(path + "/template/reports")
+                assert template.status_code == 200 and template.json()["report_type"] == "template", (
+                    f"Ожидался немедленный шаблонный ответ: {template.text}"
+                )
+                history = await client.get(path + "/reports")
+                assert history.status_code == 200 and history.json() == [], (
+                    f"Чтение шаблона не должно писать в историю: {history.text}"
+                )
+                assert publish.call_count == generator.await_count == 0, (
+                    "Чтение шаблона вызвало брокер или LLM"
+                )
+                async for db in app.dependency_overrides[get_async_session]():
+                    await save_automatic_report(db, UUID(experiment_id))
+                    await save_automatic_report(db, UUID(experiment_id))
+                assert generator.await_count == 0, "Автоматический отчёт обратился к LLM"
+
+                queued = await client.post(path + "/llm/reports")
+                assert queued.status_code == 202 and queued.json()["status"] == "pending", (
+                    f"Задание должно сохраниться при отказе брокера: {queued.text}"
+                )
+                repeated = await client.post(path + "/llm/reports")
+                assert repeated.status_code == 202 and repeated.json()["id"] == queued.json()["id"], (
+                    f"Повтор должен вернуть то же ожидающее задание: {repeated.text}"
+                )
+                assert publish.call_count == 1, "Повторное задание было отправлено в очередь"
+                report_id = UUID(queued.json()["id"])
+                async for db in app.dependency_overrides[get_async_session]():
+                    await complete_report(db, report_id)
+                    await complete_report(db, report_id)
+                reports = await client.get(path + "/reports")
+                assert reports.status_code == 200 and len(reports.json()) == 2, (
+                    f"Ожидались автоматический шаблон и ручной отчёт: {reports.text}"
+                )
+                ready = next(row for row in reports.json() if row["id"] == str(report_id))
+                automatic = next(row for row in reports.json() if row["id"] != str(report_id))
+                assert ready["status"] == "completed" and ready["fallback_reason"] == "missing_key", (
+                    f"Без ключа ожидался готовый шаблон с причиной подмены: {ready}"
+                )
+                assert automatic["status"] == "completed" and automatic["fallback_reason"] is None, (
+                    f"Автоматический шаблон не должен считаться подменой: {automatic}"
+                )
+                assert ready["report_type"] == automatic["report_type"] == "template", (
+                    f"Оба сохранённых отчёта должны быть шаблонными: {reports.text}"
+                )
+                assert ready["report_content"] == automatic["report_content"] == template.json()["report_content"], (
+                    "Три шаблона для одного снимка содержат разный текст"
+                )
+                assert generator.await_count == 1, "Ручной отчёт был обработан больше одного раза"
         finally:
             database.events.drop()
