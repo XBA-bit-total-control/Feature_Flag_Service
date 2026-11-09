@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.database import DATABASE_URL, get_mongo_database
 from src.models.experiment import Experiment, ExperimentStatus
+from src.services.experiment_reports_service import save_automatic_report
 from src.services.experiment_results_service import calculate_results
 from src.services.experiment_service import ExperimentConflictError, ExperimentNotFoundError
 
@@ -24,7 +25,9 @@ async def _calculate_running() -> dict[str, str]:
         for experiment_id in ids:
             try:
                 async with sessions.begin() as db:
-                    await calculate_results(db, get_mongo_database(), experiment_id)
+                    results = await calculate_results(db, get_mongo_database(), experiment_id)
+                    if results and results[0].enough_data and results[0].is_significant:
+                        await save_automatic_report(db, experiment_id)
                 outcomes[str(experiment_id)] = "calculated"
             except (ExperimentConflictError, ExperimentNotFoundError) as error:
                 outcomes[str(experiment_id)] = str(error)
