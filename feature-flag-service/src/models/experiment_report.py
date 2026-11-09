@@ -3,6 +3,9 @@ from datetime import datetime
 
 from sqlalchemy import String, Text, DateTime, func, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Integer
+from typing import Any
 
 from src.models.base import Base, TimestampMixin
 
@@ -17,6 +20,9 @@ class ExperimentReport(Base, TimestampMixin):
     report_content: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
     llm_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    input_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fallback_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Relationships
     experiment: Mapped["Experiment"] = relationship("Experiment", back_populates="reports")
