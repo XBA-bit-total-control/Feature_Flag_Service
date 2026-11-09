@@ -14,12 +14,13 @@ from src.services import resolve_service
 async def test_rollout_boundaries(percentage, expected, monkeypatch) -> None:
     """Граничные проценты дают выключенный и включённый флаг."""
     flag = SimpleNamespace(
-        key="checkout", enabled=True, type="simple", rollout_percentage=percentage,
+        id=uuid4(), key="checkout", enabled=True, type="simple", rollout_percentage=percentage,
         salt="salt",
     )
     monkeypatch.setattr(
         resolve_service.flag_service, "get_flag_by_key", AsyncMock(return_value=flag)
     )
+    monkeypatch.setattr(resolve_service.targeting_service, "list_rules", AsyncMock(return_value=[]))
     response = await resolve_service.resolve_flag(
         AsyncMock(), ResolveRequest(flag_key="checkout", user_id="u1")
     )
@@ -37,6 +38,7 @@ async def test_ab_assignment_is_stable_and_requires_running_experiment(monkeypat
     monkeypatch.setattr(
         resolve_service.flag_service, "get_flag_by_key", AsyncMock(return_value=flag)
     )
+    monkeypatch.setattr(resolve_service.targeting_service, "list_rules", AsyncMock(return_value=[]))
     get_variants = AsyncMock(side_effect=[variants, list(reversed(variants))])
     monkeypatch.setattr(resolve_service.flag_service, "get_variants", get_variants)
     db = AsyncMock()
