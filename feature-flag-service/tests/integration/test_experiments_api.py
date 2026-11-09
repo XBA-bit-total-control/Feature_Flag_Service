@@ -124,7 +124,8 @@ async def test_resolve_api_with_experiment(
 ) -> None:
     """Resolve проверяет доступность флага и связь с запущенным экспериментом."""
     flag_id, owner_id, _ = experiment_db
-    monkeypatch.setattr(resolve_api, "save_event", Mock())
+    save_event = Mock()
+    monkeypatch.setattr(resolve_api, "save_event", save_event)
     monkeypatch.setattr(resolve_api, "schedule_processing", Mock())
     headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
     async with httpx.AsyncClient(
@@ -158,7 +159,19 @@ async def test_resolve_api_with_experiment(
         path = f"/api/experiments/{experiment_id}"
         started = await client.patch(path, headers=headers, json={"status": "running"})
         assert started.status_code == 200, f"Эксперимент не запущен: {started.text}"
-        first, second = await resolve(), await resolve()
+        rule = await client.post("/api/flags/checkout/targeting", headers=headers, json={
+            "attribute": "country", "operator": "eq", "values": ["RU"],
+        })
+        assert rule.status_code == 201, f"Правило A/B-флага не создано: {rule.text}"
+        blocked = await resolve(attributes={"country": "KZ"})
+        assert blocked.status_code == 200 and blocked.json()["experiment_id"] is None, (
+            f"Таргетинг не остановил A/B-назначение: {blocked.text}"
+        )
+        assert blocked.json()["reason"] == "targeting" and save_event.call_count == 0, (
+            f"Отклонённый запрос записал показ или вернул неверную причину: {blocked.text}"
+        )
+        first = await resolve(attributes={"country": "RU"})
+        second = await resolve(attributes={"country": "RU"})
         assert first.status_code == 200 and first.json() == second.json(), (
             f"Повтор запроса изменил назначение: {first.text}, {second.text}"
         )
@@ -225,6 +238,61 @@ async def experiment_db(
                 await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_targeting_api_and_resolve(experiment_db: tuple[UUID, UUID, UUID]) -> None:
+    """Проверить CRUD владельца и фильтрацию до rollout."""
+    _, owner_id, other_id = experiment_db
+    owner = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    other = {"Authorization": f"Bearer {create_access_token(str(other_id))}"}
+    path = "/api/flags/variants/targeting"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=owner,
+    ) as client:
+        flag = await client.post("/api/flags", json={"key": "variants", "enabled": True})
+        assert flag.status_code == 201, f"Не создан флаг: {flag.text}"
+        foreign = await client.get(path, headers=other)
+        assert foreign.status_code == 403, f"Чужой пользователь прочитал правила: {foreign.text}"
+        country = {"attribute": "country", "operator": "in", "values": ["RU", "KZ"]}
+        age = {"attribute": "age", "operator": "gte", "values": [18]}
+        created = await client.post(path, json=country)
+        second = await client.post(path, json=age)
+        assert created.status_code == second.status_code == 201, (
+            f"Правила не созданы: {created.text}, {second.text}"
+        )
+        rule_path = f"{path}/{created.json()['id']}"
+        wrong_flag = await client.delete(f"/api/flags/checkout/targeting/{created.json()['id']}")
+        assert wrong_flag.status_code == 404, f"Удалено правило другого флага: {wrong_flag.text}"
+
+        async def resolve(attributes):
+            return await client.post("/resolve", json={
+                "flag_key": "variants", "user_id": "u1", "attributes": attributes,
+            })
+
+        allowed = await resolve({"country": "RU", "age": 18})
+        blocked = await resolve({"country": "RU"})
+        assert allowed.status_code == 200 and allowed.json()["enabled"], (
+            f"Совпадение с обоими правилами отклонено: {allowed.text}"
+        )
+        assert blocked.status_code == 200 and not blocked.json()["enabled"], (
+            f"Пользователь без возраста прошёл таргетинг: {blocked.text}"
+        )
+        assert blocked.json()["reason"] == "targeting", f"Неверная причина отказа: {blocked.text}"
+        replaced = await client.put(rule_path, json={**country, "is_enabled": False})
+        assert replaced.status_code == 200 and not replaced.json()["is_enabled"], (
+            f"Правило не отключено: {replaced.text}"
+        )
+        allowed_without_country = await resolve({"age": 18})
+        assert allowed_without_country.json()["enabled"], (
+            f"Отключённое правило продолжает блокировать флаг: {allowed_without_country.text}"
+        )
+        deleted = await client.delete(rule_path)
+        assert deleted.status_code == 204, f"Правило не удалено: {deleted.text}"
+        listed = await client.get(path)
+        assert listed.status_code == 200 and listed.json() == [second.json()], (
+            f"После удаления ожидалось только правило возраста: {listed.text}"
+        )
 
 
 @pytest.mark.asyncio
