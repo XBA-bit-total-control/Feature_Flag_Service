@@ -6,14 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_async_session
 from src.dependencies import get_current_user
+from src.models.flag import Flag
+from src.models.flag_targeting import FlagTargeting
 from src.models.user import User
 from src.schemas.flag import FlagCreate, FlagResponse, FlagUpdate
+from src.schemas.flag_targeting import FlagTargetingResponse, FlagTargetingWrite
 from src.schemas.flag_variant import (
     FlagVariantCreate,
     FlagVariantResponse,
     FlagVariantUpdate,
 )
-from src.services import flag_service
+from src.services import flag_service, targeting_service
 
 router = APIRouter()
 
@@ -145,6 +148,68 @@ async def get_variants(
         raise HTTPException(status_code=404, detail="Флаг не найден")
     variants = await flag_service.get_variants(db, flag.id)
     return variants
+
+
+async def _get_owned_targeting_flag(
+    key: str,
+    db: AsyncSession = Depends(get_async_session),
+    user: User = Depends(get_current_user),
+) -> Flag:
+    flag = await flag_service.get_flag_by_key(db, key)
+    if flag is None:
+        raise HTTPException(status_code=404, detail="Флаг не найден")
+    if flag.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Правила доступны только владельцу флага")
+    return flag
+
+
+async def _get_targeting_rule(
+    rule_id: UUID,
+    flag: Flag = Depends(_get_owned_targeting_flag),
+    db: AsyncSession = Depends(get_async_session),
+) -> FlagTargeting:
+    rule = await targeting_service.get_rule(db, flag.id, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Правило таргетинга не найдено")
+    return rule
+
+
+@router.get("/{key}/targeting", response_model=list[FlagTargetingResponse])
+async def get_targeting_rules(
+    flag: Flag = Depends(_get_owned_targeting_flag),
+    db: AsyncSession = Depends(get_async_session),
+) -> list[FlagTargeting]:
+    """Получить правила таргетинга флага."""
+    return await targeting_service.list_rules(db, flag.id)
+
+
+@router.post("/{key}/targeting", response_model=FlagTargetingResponse, status_code=201)
+async def create_targeting_rule(
+    data: FlagTargetingWrite,
+    flag: Flag = Depends(_get_owned_targeting_flag),
+    db: AsyncSession = Depends(get_async_session),
+) -> FlagTargeting:
+    """Добавить правило таргетинга флага."""
+    return await targeting_service.create_rule(db, flag.id, data)
+
+
+@router.put("/{key}/targeting/{rule_id}", response_model=FlagTargetingResponse)
+async def replace_targeting_rule(
+    data: FlagTargetingWrite,
+    rule: FlagTargeting = Depends(_get_targeting_rule),
+    db: AsyncSession = Depends(get_async_session),
+) -> FlagTargeting:
+    """Заменить правило таргетинга флага."""
+    return await targeting_service.replace_rule(db, rule, data)
+
+
+@router.delete("/{key}/targeting/{rule_id}", status_code=204)
+async def delete_targeting_rule(
+    rule: FlagTargeting = Depends(_get_targeting_rule),
+    db: AsyncSession = Depends(get_async_session),
+) -> None:
+    """Удалить правило таргетинга флага."""
+    await targeting_service.delete_rule(db, rule)
 
 
 @router.get("/variants/{variant_id}", response_model=FlagVariantResponse)
