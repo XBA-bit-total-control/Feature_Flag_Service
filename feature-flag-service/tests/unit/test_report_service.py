@@ -4,7 +4,9 @@ import httpx
 import pytest
 
 from src.config import Settings
-from src.services.report_service import ReportContext, generate_report, template_report
+from src.services.report_service import (
+    ReportContext, build_report_data, generate_report, template_report,
+)
 from src.services.statistics_service import VariantCounts, compare_conversions
 
 
@@ -15,6 +17,7 @@ def context() -> ReportContext:
     return ReportContext(
         "Checkout", "purchase", "A", "B", control, treatment,
         compare_conversions(control, treatment),
+        alpha=0.05, min_sample_size=500,
     )
 
 
@@ -48,6 +51,17 @@ async def test_llm_success_ignores_reasoning_and_limits_output(context) -> None:
     assert result.tokens_used == 123, "Не сохранён расход токенов из usage"
     body = json.loads(requests[0].content)
     assert body["max_completion_tokens"] == 128, "Не передан лимит генерации"
+    facts = json.loads(body["messages"][1]["content"])
+    assert facts == json.loads(json.dumps(build_report_data(context))), (
+        "В запросе должны быть структурированные метрики без шаблонного отчёта"
+    )
+    assert facts["comparison"]["alpha"] == 0.05, "Потерян уровень значимости"
+    assert facts["comparison"]["min_sample_size_per_group"] == 500, (
+        "Потерян порог выборки для каждой группы"
+    )
+    assert "следующие действия" in body["messages"][0]["content"], (
+        "Запрос к модели должен требовать рекомендации по действиям"
+    )
     assert str(requests[0].url) == "https://example.test/v1/chat/completions", (
         "Клиент сформировал неверный URL"
     )
@@ -106,6 +120,11 @@ def test_template_handles_empty_data() -> None:
         "Empty", "buy", "A", "B", empty, empty, compare_conversions(empty, empty)
     ))
     assert "Данных недостаточно" in report, "Нет пояснения недостаточной выборки"
+    assert "Продолжить сбор данных" not in report, "В шаблоне осталась рекомендация собирать данные"
+    assert "Решение о завершении принимает человек" not in report, (
+        "В шаблоне осталась лишняя фраза о завершении эксперимента"
+    )
+    assert "Повторные просмотры p-value" in report, "Пропала оговорка об интерпретации p-value"
 
 
 @pytest.mark.asyncio
@@ -122,3 +141,19 @@ async def test_transient_status_can_recover(context) -> None:
     ) as client:
         result = await generate_report(context, config(LLM_MAX_RETRIES=1), client)
     assert result.report_type == "llm", "После успешного повтора остался fallback"
+
+
+def test_legacy_context_keeps_unknown_alpha() -> None:
+    """Старый снимок не получает выдуманный порог значимости."""
+    empty = VariantCounts(0, 0)
+    context = ReportContext(
+        "Legacy", "buy", "A", "B", empty, empty, compare_conversions(empty, empty)
+    )
+    facts = build_report_data(context)
+    assert facts["comparison"]["alpha"] is None, "Неизвестный alpha был подменён"
+    assert facts["comparison"]["enough_data"] is False, (
+        "Пустая выборка ошибочно отмечена достаточной"
+    )
+    assert all(value is None for value in facts["available_context"].values()), (
+        "Неизвестный бизнес-контекст должен оставаться явно неизвестным"
+    )
