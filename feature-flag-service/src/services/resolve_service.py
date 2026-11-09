@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.experiment import Experiment, ExperimentStatus
 from src.schemas.resolve import ResolveRequest, ResolveResponse
-from src.services import flag_service
+from src.services import flag_service, targeting_service
 from src.utils.hashing import deterministic_hash, resolve_bucket
 
 
@@ -26,6 +26,10 @@ async def resolve_flag(db: AsyncSession, data: ResolveRequest) -> ResolveRespons
         flag_key=flag.key, user_id=data.user_id, enabled=False, reason="disabled"
     )
     if not flag.enabled:
+        return response
+    rules = await targeting_service.list_rules(db, flag.id, enabled_only=True)
+    if not all(targeting_service.matches_rule(rule, data.attributes) for rule in rules):
+        response.reason = "targeting"
         return response
     if flag.type in ("simple", "boolean", "percentage"):
         if not 0 <= flag.rollout_percentage <= 100:
