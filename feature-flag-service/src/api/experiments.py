@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.celery_app import app as celery_app
 from src.database import get_mongo_database
-from src.dependencies import get_current_user, get_db
+from src.dependencies import get_current_user, get_db, require_writer
 from src.models.experiment import Experiment, ExperimentStatus
 from src.models.experiment_report import ExperimentReport
 from src.models.experiment_result import ExperimentResult
@@ -51,11 +51,11 @@ def _experiment_errors() -> Iterator[None]:
 async def create_experiment(
         data: ExperimentCreate,
         db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+        user: User = Depends(require_writer),
 ) -> Experiment:
     """Создать черновик эксперимента для своего флага."""
     with _experiment_errors():
-        return await experiment_service.create_experiment(db, data, user.id)
+        return await experiment_service.create_experiment(db, data, user)
 
 
 @router.get("", response_model=list[ExperimentResponse])
@@ -69,7 +69,7 @@ async def list_experiments(
 ) -> list[Experiment]:
     """Получить свои эксперименты с фильтрами по статусу и флагу."""
     return await experiment_service.list_experiments(
-        db, user.id, status, flag_id, limit=limit, offset=offset,
+        db, user, status, flag_id, limit=limit, offset=offset,
     )
 
 
@@ -81,7 +81,7 @@ async def get_experiment(
 ) -> Experiment:
     """Получить параметры и состояние эксперимента."""
     with _experiment_errors():
-        return await experiment_service.get_experiment(db, experiment_id, user.id)
+        return await experiment_service.get_experiment(db, experiment_id, user)
 
 
 @router.patch("/{experiment_id}", response_model=ExperimentResponse)
@@ -89,16 +89,16 @@ async def update_experiment(
         experiment_id: UUID,
         data: ExperimentUpdate | ExperimentStatusUpdate,
         db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+        user: User = Depends(require_writer),
 ) -> Experiment:
     """Изменить параметры черновика или выполнить переход статуса."""
     with _experiment_errors():
         if isinstance(data, ExperimentStatusUpdate):
             return await experiment_service.change_status(
-                db, experiment_id, user.id, data.status
+                db, experiment_id, user, data.status
             )
         return await experiment_service.update_experiment(
-            db, experiment_id, user.id, data
+            db, experiment_id, user, data
         )
 
 
@@ -106,11 +106,11 @@ async def update_experiment(
 async def delete_experiment(
         experiment_id: UUID,
         db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+        user: User = Depends(require_writer),
 ) -> None:
     """Удалить черновик эксперимента."""
     with _experiment_errors():
-        await experiment_service.delete_experiment(db, experiment_id, user.id)
+        await experiment_service.delete_experiment(db, experiment_id, user)
 
 
 @router.get("/{experiment_id}/results", response_model=list[ExperimentResultResponse])
@@ -121,7 +121,7 @@ async def read_results(
 ) -> list[ExperimentResult]:
     """Получить последний сохранённый снимок результатов своего эксперимента."""
     with _experiment_errors():
-        await experiment_service.get_experiment(db, experiment_id, user.id)
+        await experiment_service.get_experiment(db, experiment_id, user)
         return await get_results(db, experiment_id)
 
 
@@ -129,12 +129,12 @@ async def read_results(
 async def recalculate_results(
         experiment_id: UUID,
         db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+        user: User = Depends(require_writer),
         mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
 ) -> list[ExperimentResult]:
     """Пересчитать результаты своего эксперимента по сохранённым событиям."""
     with _experiment_errors():
-        await experiment_service.get_experiment(db, experiment_id, user.id)
+        await experiment_service.get_experiment(db, experiment_id, user)
         try:
             return await calculate_results(db, mongo, experiment_id)
         except PyMongoError as error:
@@ -149,7 +149,7 @@ async def read_template_report(
 ) -> TemplateReportResponse:
     """Получить шаблонный отчёт для своего эксперимента."""
     with _experiment_errors():
-        await experiment_service.get_experiment(db, experiment_id, user.id)
+        await experiment_service.get_experiment(db, experiment_id, user)
         content = await build_template_report(db, experiment_id)
         return TemplateReportResponse(report_content=content)
 
@@ -158,11 +158,11 @@ async def read_template_report(
 async def create_llm_report(
         experiment_id: UUID,
         db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+        user: User = Depends(require_writer),
 ) -> ExperimentReport:
     """Поставить генерацию LLM-отчёта для своего эксперимента в очередь."""
     with _experiment_errors():
-        await experiment_service.get_experiment(db, experiment_id, user.id)
+        await experiment_service.get_experiment(db, experiment_id, user)
         report, created = await request_llm_report(db, experiment_id)
         if not created:
             return report
@@ -186,5 +186,5 @@ async def read_reports(
 ) -> list[ExperimentReport]:
     """Получить историю отчётов своего эксперимента."""
     with _experiment_errors():
-        await experiment_service.get_experiment(db, experiment_id, user.id)
+        await experiment_service.get_experiment(db, experiment_id, user)
         return await list_reports(db, experiment_id)
