@@ -23,6 +23,9 @@ app.conf.update(
         "reports.*": {"queue": "reports"},
     },
     beat_schedule={
+        "cleanup-old-events": {
+            "task": "events.cleanup_old", "schedule": 86400.0,
+        },
         "pending-reports": {
             "task": "reports.process_pending", "schedule": 60.0,
         },
