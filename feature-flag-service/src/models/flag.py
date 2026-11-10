@@ -19,6 +19,7 @@ class Flag(Base, TimestampMixin):
     rollout_percentage: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     salt: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     owner: Mapped["User"] = relationship("User", back_populates="flags")
