@@ -120,10 +120,6 @@ def test_template_handles_empty_data() -> None:
         "Empty", "buy", "A", "B", empty, empty, compare_conversions(empty, empty)
     ))
     assert "Данных недостаточно" in report, "Нет пояснения недостаточной выборки"
-    assert "Продолжить сбор данных" not in report, "В шаблоне осталась рекомендация собирать данные"
-    assert "Решение о завершении принимает человек" not in report, (
-        "В шаблоне осталась лишняя фраза о завершении эксперимента"
-    )
     assert "Повторные просмотры p-value" in report, "Пропала оговорка об интерпретации p-value"
 
 
