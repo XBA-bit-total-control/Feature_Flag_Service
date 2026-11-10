@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -39,10 +39,16 @@ async def create_flag(
 
 @router.get("", response_model=list[FlagResponse])
 async def get_all_flags(
+    flag_type: str | None = Query(default=None, alias="type", min_length=1, max_length=50),
+    enabled: bool | None = None,
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=2**31 - 1),
     db: AsyncSession = Depends(get_async_session),
 ) -> list[FlagResponse]:
-    """Получить список всех флагов."""
-    flags = await flag_service.get_all_flags(db)
+    """Получить страницу флагов с фильтрами."""
+    flags = await flag_service.get_all_flags(
+        db, flag_type=flag_type, enabled=enabled, limit=limit, offset=offset,
+    )
     return flags
 
 
