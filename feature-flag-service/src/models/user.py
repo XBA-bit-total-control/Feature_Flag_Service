@@ -6,8 +6,9 @@ from src.models.base import Base, TimestampMixin
 
 
 class UserRole(str, Enum):
-    USER = "user"
     ADMIN = "admin"
+    DEVELOPER = "developer"
+    VIEWER = "viewer"
 
 
 class User(Base, TimestampMixin):
@@ -17,7 +18,7 @@ class User(Base, TimestampMixin):
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(Text, nullable=False)
-    role: Mapped[UserRole] = mapped_column(SQLAlchemyEnum(UserRole), default=UserRole.USER, nullable=False)
+    role: Mapped[UserRole] = mapped_column(SQLAlchemyEnum(UserRole), default=UserRole.VIEWER, nullable=False)
 
     # Relationships
     flags: Mapped[list] = relationship("Flag", back_populates="owner", cascade="all, delete-orphan")
