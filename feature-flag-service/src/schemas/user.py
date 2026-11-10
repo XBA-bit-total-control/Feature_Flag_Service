@@ -2,6 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from src.models.user import UserRole
+
 
 class UserCreate(BaseModel):
     """Схема для создания пользователя."""
@@ -29,6 +31,7 @@ class UserResponse(BaseModel):
 
     id: UUID = Field(..., description="Идентификатор пользователя")
     email: str = Field(..., description="Email")
+    role: UserRole
 
     model_config = {"from_attributes": True}
 
@@ -38,3 +41,9 @@ class TokenResponse(BaseModel):
 
     access_token: str = Field(..., description="JWT токен")
     token_type: str = "bearer"
+
+
+class UserRoleUpdate(BaseModel):
+    """Новая роль пользователя."""
+
+    role: UserRole
