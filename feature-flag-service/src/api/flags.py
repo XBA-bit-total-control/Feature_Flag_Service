@@ -1,14 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 from src.database import get_async_session
-from src.dependencies import get_current_user
+from src.dependencies import get_current_user, require_writer
 from src.models.flag import Flag
 from src.models.flag_targeting import FlagTargeting
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.schemas.flag import FlagCreate, FlagResponse, FlagUpdate
 from src.schemas.flag_targeting import FlagTargetingResponse, FlagTargetingWrite
 from src.schemas.flag_variant import (
@@ -17,23 +16,33 @@ from src.schemas.flag_variant import (
     FlagVariantUpdate,
 )
 from src.services import flag_service, targeting_service
+from src.services.audit_service import record_change, snapshot
 
 router = APIRouter()
+
+
+def _check_owner(flag: Flag, user: User) -> None:
+    if flag.owner_id != user.id and user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Доступ разрешён владельцу флага или администратору")
 
 
 @router.post("", response_model=FlagResponse, status_code=201)
 async def create_flag(
     data: FlagCreate,
     db: AsyncSession = Depends(get_async_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_writer),
 ) -> FlagResponse:
     """Создать новый feature-флаг."""
-    existing = await flag_service.get_flag_by_key(db, data.key)
+    existing = await flag_service.get_flag_by_key(db, data.key, include_deleted=True)
     if existing is not None:
         raise HTTPException(
             status_code=409, detail="Флаг с таким ключом уже существует"
         )
-    flag = await flag_service.create_flag(db, data, user.id)
+    try:
+        flag = await flag_service.create_flag(db, data, user.id)
+    except flag_service.ConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    record_change(db, user.id, "flag", flag.id, "created", after=snapshot(flag))
     return flag
 
 
@@ -69,46 +78,45 @@ async def update_flag(
     key: str,
     data: FlagUpdate,
     db: AsyncSession = Depends(get_async_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_writer),
 ) -> FlagResponse:
     """Обновить feature-флаг."""
-    flag = await flag_service.get_flag_by_key(db, key)
+    flag = await flag_service.get_flag_by_key(db, key, lock=True)
     if flag is None:
         raise HTTPException(status_code=404, detail="Флаг не найден")
-    if flag.owner_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещён: только владелец может обновлять флаг",
-        )
+    _check_owner(flag, user)
     if not data.model_dump(exclude_unset=True):
         raise HTTPException(
             status_code=400, detail="Тело запроса не может быть пустым"
         )
+    before = snapshot(flag)
     try:
-        return await flag_service.update_flag(db, flag, data)
+        flag = await flag_service.update_flag(db, flag, data)
     except flag_service.ConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    record_change(db, user.id, "flag", flag.id, "updated", before=before, after=snapshot(flag))
+    return flag
 
 
 @router.delete("/{key}", status_code=204)
 async def delete_flag(
     key: str,
     db: AsyncSession = Depends(get_async_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_writer),
 ) -> None:
     """Удалить feature-флаг."""
-    flag = await flag_service.get_flag_by_key(db, key)
+    flag = await flag_service.get_flag_by_key(db, key, lock=True)
     if flag is None:
         raise HTTPException(status_code=404, detail="Флаг не найден")
-    if flag.owner_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещён: только владелец может удалить флаг",
-        )
-    await flag_service.delete_flag(db, flag)
-    return None
+    _check_owner(flag, user)
+    before = snapshot(flag)
+    try:
+        await flag_service.delete_flag(db, flag)
+    except flag_service.ConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    record_change(db, user.id, "flag", flag.id, "deleted", before=before, after=snapshot(flag))
 
 
 @router.post(
@@ -120,17 +128,13 @@ async def create_variant(
     key: str,
     data: FlagVariantCreate,
     db: AsyncSession = Depends(get_async_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_writer),
 ) -> FlagVariantResponse:
     """Создать вариант A/B теста."""
-    flag = await flag_service.get_flag_by_key(db, key)
+    flag = await flag_service.get_flag_by_key(db, key, lock=True)
     if flag is None:
         raise HTTPException(status_code=404, detail="Флаг не найден")
-    if flag.owner_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещён: только владелец может создавать варианты",
-        )
+    _check_owner(flag, user)
     variant_data = data.model_dump()
     variant_data["flag_id"] = flag.id
     try:
@@ -140,6 +144,7 @@ async def create_variant(
         )
     except flag_service.ConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    record_change(db, user.id, "variant", variant.id, "created", after=snapshot(variant))
     return variant
 
 
@@ -158,14 +163,14 @@ async def get_variants(
 
 async def _get_owned_targeting_flag(
     key: str,
+    request: Request,
     db: AsyncSession = Depends(get_async_session),
     user: User = Depends(get_current_user),
 ) -> Flag:
-    flag = await flag_service.get_flag_by_key(db, key)
+    flag = await flag_service.get_flag_by_key(db, key, lock=request.method != "GET")
     if flag is None:
         raise HTTPException(status_code=404, detail="Флаг не найден")
-    if flag.owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Правила доступны только владельцу флага")
+    _check_owner(flag, user)
     return flag
 
 
@@ -192,29 +197,38 @@ async def get_targeting_rules(
 @router.post("/{key}/targeting", response_model=FlagTargetingResponse, status_code=201)
 async def create_targeting_rule(
     data: FlagTargetingWrite,
+    user: User = Depends(require_writer),
     flag: Flag = Depends(_get_owned_targeting_flag),
     db: AsyncSession = Depends(get_async_session),
 ) -> FlagTargeting:
     """Добавить правило таргетинга флага."""
-    return await targeting_service.create_rule(db, flag.id, data)
+    rule = await targeting_service.create_rule(db, flag.id, data)
+    record_change(db, user.id, "targeting", rule.id, "created", after=snapshot(rule))
+    return rule
 
 
 @router.put("/{key}/targeting/{rule_id}", response_model=FlagTargetingResponse)
 async def replace_targeting_rule(
     data: FlagTargetingWrite,
+    user: User = Depends(require_writer),
     rule: FlagTargeting = Depends(_get_targeting_rule),
     db: AsyncSession = Depends(get_async_session),
 ) -> FlagTargeting:
     """Заменить правило таргетинга флага."""
-    return await targeting_service.replace_rule(db, rule, data)
+    before = snapshot(rule)
+    rule = await targeting_service.replace_rule(db, rule, data)
+    record_change(db, user.id, "targeting", rule.id, "updated", before=before, after=snapshot(rule))
+    return rule
 
 
 @router.delete("/{key}/targeting/{rule_id}", status_code=204)
 async def delete_targeting_rule(
+    user: User = Depends(require_writer),
     rule: FlagTargeting = Depends(_get_targeting_rule),
     db: AsyncSession = Depends(get_async_session),
 ) -> None:
     """Удалить правило таргетинга флага."""
+    record_change(db, user.id, "targeting", rule.id, "deleted", before=snapshot(rule))
     await targeting_service.delete_rule(db, rule)
 
 
@@ -238,39 +252,38 @@ async def update_variant(
     variant_id: UUID,
     data: FlagVariantUpdate,
     db: AsyncSession = Depends(get_async_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_writer),
 ) -> FlagVariantResponse:
     """Обновить вариант A/B теста."""
-    variant = await flag_service.get_variant_by_id(db, variant_id)
+    variant = await flag_service.get_variant_by_id(db, variant_id, lock=True)
     if variant is None:
         raise HTTPException(status_code=404, detail="Вариант не найден")
-    if variant.flag.owner_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещён: только владелец может обновлять варианты",
-        )
+    _check_owner(variant.flag, user)
+    before = snapshot(variant)
     try:
-        return await flag_service.update_variant(db, variant, data)
+        variant = await flag_service.update_variant(db, variant, data)
     except flag_service.ConflictError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    record_change(db, user.id, "variant", variant.id, "updated", before=before, after=snapshot(variant))
+    return variant
 
 
 @router.delete("/variants/{variant_id}", status_code=204)
 async def delete_variant(
     variant_id: UUID,
     db: AsyncSession = Depends(get_async_session),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_writer),
 ) -> None:
     """Удалить вариант A/B теста."""
-    variant = await flag_service.get_variant_by_id(db, variant_id)
+    variant = await flag_service.get_variant_by_id(db, variant_id, lock=True)
     if variant is None:
         raise HTTPException(status_code=404, detail="Вариант не найден")
-    if variant.flag.owner_id != user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещён: только владелец может удалять варианты",
-        )
-    await flag_service.delete_variant(db, variant)
-    return None
+    _check_owner(variant.flag, user)
+    before = snapshot(variant)
+    try:
+        await flag_service.delete_variant(db, variant)
+    except flag_service.ConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    record_change(db, user.id, "variant", variant.id, "deleted", before=before)
