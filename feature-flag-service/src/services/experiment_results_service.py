@@ -7,18 +7,25 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.experiment import Experiment, ExperimentStatus
+from src.models.experiment_participant import ExperimentParticipant
 from src.models.experiment_result import ExperimentResult
 from src.models.flag_variant import FlagVariant
 from src.schemas.event import EventCreate
 from src.services.experiment_service import ExperimentConflictError, ExperimentNotFoundError
-from src.services.statistics_service import compare_conversions, count_participants
+from src.services.statistics_service import ParticipantEvents, compare_conversions, count_participants
 
 
-def _read_events(mongo: Database[dict[str, Any]], experiment: Experiment) -> list[EventCreate]:
-    fields = set(EventCreate.model_fields)
+def parse_stored_event(document: dict[str, Any]) -> EventCreate:
+    """Проверить данные события без служебных полей MongoDB."""
+    return EventCreate.model_validate({
+        key: value for key, value in document.items() if key in EventCreate.model_fields
+    })
+
+
+def _read_events(mongo: Database[dict[str, Any]], experiment_id: UUID) -> list[EventCreate]:
     return [
-        EventCreate.model_validate({key: value for key, value in doc.items() if key in fields})
-        for doc in mongo["events"].find({"experiment_id": str(experiment.id)})
+        parse_stored_event(doc)
+        for doc in mongo["events"].find({"experiment_id": str(experiment_id)})
     ]
 
 
@@ -50,9 +57,14 @@ async def calculate_results(
         raise ExperimentConflictError("Назовите контрольный вариант control или A")
     treatment = next(key for key in keys if key != control)
     try:
-        events = await run_in_threadpool(_read_events, mongo, experiment)
+        events = await run_in_threadpool(_read_events, mongo, experiment.id)
+        archived = await db.scalars(select(ExperimentParticipant).where(
+            ExperimentParticipant.experiment_id == experiment.id,
+        ))
         counts = count_participants(
-            events, experiment.id, experiment.primary_metric, control, treatment
+            events, experiment.id, experiment.primary_metric, control, treatment,
+            archived=(ParticipantEvents(row.user_id, row.variant_key, row.impression_at, row.conversion_at)
+                      for row in archived),
         )
         comparison = compare_conversions(
             *counts, alpha=experiment.alpha, min_sample_size=experiment.min_sample_size
