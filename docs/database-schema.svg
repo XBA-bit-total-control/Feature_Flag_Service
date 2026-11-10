@@ -1,0 +1,195 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1322 956" width="1322" height="956" role="img" aria-labelledby="title description">
+  <title id="title">Схема базы данных PostgreSQL</title>
+  <desc id="description">Девять таблиц Feature Flag Service. Восемь связей имеют кратность от ровно одной записи на родительской стороне до нуля или многих на дочерней.</desc>
+  <defs>
+    <g id="exactly-one">
+      <path d="M 5 -5.5 V 5.5 M 11 -5.5 V 5.5" />
+    </g>
+    <g id="zero-or-many">
+      <path d="M 0 -6 L 9 0 L 0 6" />
+      <circle cx="17" cy="0" r="3.7" fill="#10151d" />
+    </g>
+  </defs>
+  <rect width="1322" height="956" fill="#10151d" />
+  <text x="38" y="32" fill="#8babbc" font-family="Segoe UI, sans-serif" font-size="13" font-weight="600" letter-spacing="2">FEATURE FLAG SERVICE  /  POSTGRESQL</text>
+  <text x="38" y="71" fill="#f3f7fc" font-family="Segoe UI, sans-serif" font-size="33" font-weight="650">Схема базы данных</text>
+  <path d="M 38 88 H 1284 M 38 917 H 1284" stroke="#354352" />
+  <g fill="none" stroke="#7dd6ce" stroke-width="1.7" stroke-linejoin="round">
+    <path d="M 40 936 H 66 M 226 936 H 256" />
+    <use href="#exactly-one" transform="translate(40 936)" />
+    <use href="#zero-or-many" transform="translate(256 936) rotate(180)" />
+  </g>
+  <g fill="#b7c8d7" font-family="Segoe UI, sans-serif" font-size="14">
+    <text x="78" y="941">Ровно одна запись</text>
+    <text x="268" y="941">Ноль или много записей</text>
+  </g>
+  <g id="users" aria-label="users">
+    <rect x="38" y="154" width="248" height="166" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 43 155 H 281 Q 285 155 285 159 V 191 H 39 V 159 Q 39 155 43 155 Z" fill="#242f3e" />
+    <path d="M 38 192 H 286" stroke="#8292a5" />
+    <text x="162.0" y="179" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">users</text>
+    <text x="53" y="212" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="53" y="231" data-column="email" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">email</text>
+    <text x="53" y="250" data-column="hashed_password" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">hashed_password</text>
+    <text x="53" y="269" data-column="role" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">role</text>
+    <text x="53" y="288" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="53" y="307" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="audit_logs" aria-label="audit_logs">
+    <rect x="38" y="443" width="248" height="242" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 43 444 H 281 Q 285 444 285 448 V 480 H 39 V 448 Q 39 444 43 444 Z" fill="#242f3e" />
+    <path d="M 38 481 H 286" stroke="#8292a5" />
+    <text x="162.0" y="468" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">audit_logs</text>
+    <text x="53" y="501" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="53" y="520" data-column="entity_type" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">entity_type</text>
+    <text x="53" y="539" data-column="entity_id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">entity_id</text>
+    <text x="53" y="558" data-column="action" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">action</text>
+    <text x="53" y="577" data-column="old_value" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">old_value</text>
+    <text x="53" y="596" data-column="new_value" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">new_value</text>
+    <text x="53" y="615" data-column="user_id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">user_id</text>
+    <text x="53" y="634" data-column="ip_address" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">ip_address</text>
+    <text x="53" y="653" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="53" y="672" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="flags" aria-label="flags">
+    <rect x="340" y="154" width="248" height="261" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 345 155 H 583 Q 587 155 587 159 V 191 H 341 V 159 Q 341 155 345 155 Z" fill="#242f3e" />
+    <path d="M 340 192 H 588" stroke="#8292a5" />
+    <text x="464.0" y="179" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">flags</text>
+    <text x="355" y="212" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="355" y="231" data-column="owner_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">owner_id</text>
+    <text x="355" y="250" data-column="key" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">key</text>
+    <text x="355" y="269" data-column="description" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">description</text>
+    <text x="355" y="288" data-column="type" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">type</text>
+    <text x="355" y="307" data-column="enabled" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">enabled</text>
+    <text x="355" y="326" data-column="rollout_percentage" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">rollout_percentage</text>
+    <text x="355" y="345" data-column="salt" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">salt</text>
+    <text x="355" y="364" data-column="deleted_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">deleted_at</text>
+    <text x="355" y="383" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="355" y="402" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="flag_variants" aria-label="flag_variants">
+    <rect x="340" y="443" width="248" height="185" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 345 444 H 583 Q 587 444 587 448 V 480 H 341 V 448 Q 341 444 345 444 Z" fill="#242f3e" />
+    <path d="M 340 481 H 588" stroke="#8292a5" />
+    <text x="464.0" y="468" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">flag_variants</text>
+    <text x="355" y="501" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="355" y="520" data-column="flag_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">flag_id</text>
+    <text x="355" y="539" data-column="variant_key" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">variant_key</text>
+    <text x="355" y="558" data-column="description" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">description</text>
+    <text x="355" y="577" data-column="weight" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">weight</text>
+    <text x="355" y="596" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="355" y="615" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="flag_targeting_rules" aria-label="flag_targeting_rules">
+    <rect x="340" y="654" width="248" height="204" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 345 655 H 583 Q 587 655 587 659 V 691 H 341 V 659 Q 341 655 345 655 Z" fill="#242f3e" />
+    <path d="M 340 692 H 588" stroke="#8292a5" />
+    <text x="464.0" y="679" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">flag_targeting_rules</text>
+    <text x="355" y="712" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="355" y="731" data-column="flag_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">flag_id</text>
+    <text x="355" y="750" data-column="attribute" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">attribute</text>
+    <text x="355" y="769" data-column="operator" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">operator</text>
+    <text x="355" y="788" data-column="values" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">values</text>
+    <text x="355" y="807" data-column="is_enabled" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">is_enabled</text>
+    <text x="355" y="826" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="355" y="845" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="experiments" aria-label="experiments">
+    <rect x="660" y="154" width="248" height="299" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 665 155 H 903 Q 907 155 907 159 V 191 H 661 V 159 Q 661 155 665 155 Z" fill="#242f3e" />
+    <path d="M 660 192 H 908" stroke="#8292a5" />
+    <text x="784.0" y="179" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">experiments</text>
+    <text x="675" y="212" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="675" y="231" data-column="creator_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">creator_id</text>
+    <text x="675" y="250" data-column="flag_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">flag_id</text>
+    <text x="675" y="269" data-column="name" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">name</text>
+    <text x="675" y="288" data-column="description" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">description</text>
+    <text x="675" y="307" data-column="status" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">status</text>
+    <text x="675" y="326" data-column="primary_metric" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">primary_metric</text>
+    <text x="675" y="345" data-column="alpha" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">alpha</text>
+    <text x="675" y="364" data-column="min_sample_size" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">min_sample_size</text>
+    <text x="675" y="383" data-column="start_date" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">start_date</text>
+    <text x="675" y="402" data-column="end_date" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">end_date</text>
+    <text x="675" y="421" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="675" y="440" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="experiment_results" aria-label="experiment_results">
+    <rect x="984" y="118" width="300" height="318" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 989 119 H 1279 Q 1283 119 1283 123 V 155 H 985 V 123 Q 985 119 989 119 Z" fill="#242f3e" />
+    <path d="M 984 156 H 1284" stroke="#8292a5" />
+    <text x="1134.0" y="143" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">experiment_results</text>
+    <text x="999" y="176" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="999" y="195" data-column="experiment_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">experiment_id</text>
+    <text x="999" y="214" data-column="variant_name" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">variant_name</text>
+    <text x="999" y="233" data-column="sample_size" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">sample_size</text>
+    <text x="999" y="252" data-column="conversions" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">conversions</text>
+    <text x="999" y="271" data-column="conversion_rate" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">conversion_rate</text>
+    <text x="999" y="290" data-column="z_statistic" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">z_statistic</text>
+    <text x="999" y="309" data-column="p_value" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">p_value</text>
+    <text x="999" y="328" data-column="confidence_interval_lower" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">confidence_interval_lower</text>
+    <text x="999" y="347" data-column="confidence_interval_upper" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">confidence_interval_upper</text>
+    <text x="999" y="366" data-column="is_significant" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">is_significant</text>
+    <text x="999" y="385" data-column="enough_data" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">enough_data</text>
+    <text x="999" y="404" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="999" y="423" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="experiment_reports" aria-label="experiment_reports">
+    <rect x="984" y="462" width="300" height="261" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 989 463 H 1279 Q 1283 463 1283 467 V 499 H 985 V 467 Q 985 463 989 463 Z" fill="#242f3e" />
+    <path d="M 984 500 H 1284" stroke="#8292a5" />
+    <text x="1134.0" y="487" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">experiment_reports</text>
+    <text x="999" y="520" data-column="id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">id</text>
+    <text x="999" y="539" data-column="experiment_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">experiment_id</text>
+    <text x="999" y="558" data-column="report_type" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">report_type</text>
+    <text x="999" y="577" data-column="report_content" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">report_content</text>
+    <text x="999" y="596" data-column="status" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">status</text>
+    <text x="999" y="615" data-column="llm_model" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">llm_model</text>
+    <text x="999" y="634" data-column="input_snapshot" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">input_snapshot</text>
+    <text x="999" y="653" data-column="tokens_used" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">tokens_used</text>
+    <text x="999" y="672" data-column="fallback_reason" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">fallback_reason</text>
+    <text x="999" y="691" data-column="created_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">created_at</text>
+    <text x="999" y="710" data-column="updated_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">updated_at</text>
+  </g>
+  <g id="experiment_participants" aria-label="experiment_participants">
+    <rect x="984" y="749" width="300" height="147" rx="5" fill="#161e29" stroke="#8292a5" />
+    <path d="M 989 750 H 1279 Q 1283 750 1283 754 V 786 H 985 V 754 Q 985 750 989 750 Z" fill="#242f3e" />
+    <path d="M 984 787 H 1284" stroke="#8292a5" />
+    <text x="1134.0" y="774" text-anchor="middle" fill="#f3f7fc" font-family="Consolas, monospace" font-size="16" font-weight="700">experiment_participants</text>
+    <text x="999" y="807" data-column="experiment_id" fill="#b1eee8" font-family="Consolas, monospace" font-size="15">experiment_id</text>
+    <text x="999" y="826" data-column="user_id" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">user_id</text>
+    <text x="999" y="845" data-column="variant_key" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">variant_key</text>
+    <text x="999" y="864" data-column="impression_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">impression_at</text>
+    <text x="999" y="883" data-column="conversion_at" fill="#e2eaf3" font-family="Consolas, monospace" font-size="15">conversion_at</text>
+  </g>
+  <g id="relationships" fill="none" stroke="#7dd6ce" stroke-width="1.7" stroke-linejoin="round">
+    <path d="M 309 226 V 207 H 286" />
+    <use href="#exactly-one" transform="translate(286 207)" />
+    <path d="M 340 226 H 309" data-from="flags.owner_id" data-to="users.id" />
+    <use href="#zero-or-many" transform="translate(340 226) rotate(180)" />
+    <path d="M 660 226 H 635 V 103 H 309 V 207" data-from="experiments.creator_id" data-to="users.id" />
+    <use href="#zero-or-many" transform="translate(660 226) rotate(180)" />
+    <path d="M 613 726 V 207 H 588" />
+    <use href="#exactly-one" transform="translate(588 207)" />
+    <path d="M 588 726 H 613" data-from="flag_targeting_rules.flag_id" data-to="flags.id" />
+    <use href="#zero-or-many" transform="translate(588 726)" />
+    <path d="M 588 515 H 613" data-from="flag_variants.flag_id" data-to="flags.id" />
+    <use href="#zero-or-many" transform="translate(588 515)" />
+    <path d="M 660 245 H 613" data-from="experiments.flag_id" data-to="flags.id" />
+    <use href="#zero-or-many" transform="translate(660 245) rotate(180)" />
+    <path d="M 946 802 V 207 H 908" />
+    <use href="#exactly-one" transform="translate(908 207)" />
+    <path d="M 984 190 H 946 V 207" data-from="experiment_results.experiment_id" data-to="experiments.id" />
+    <use href="#zero-or-many" transform="translate(984 190) rotate(180)" />
+    <path d="M 984 534 H 946" data-from="experiment_reports.experiment_id" data-to="experiments.id" />
+    <use href="#zero-or-many" transform="translate(984 534) rotate(180)" />
+    <path d="M 984 802 H 946" data-from="experiment_participants.experiment_id" data-to="experiments.id" />
+    <use href="#zero-or-many" transform="translate(984 802) rotate(180)" />
+    <circle cx="309" cy="207" r="3" fill="#7dd6ce" stroke="none" />
+    <circle cx="613" cy="515" r="3" fill="#7dd6ce" stroke="none" />
+    <circle cx="613" cy="245" r="3" fill="#7dd6ce" stroke="none" />
+    <circle cx="946" cy="207" r="3" fill="#7dd6ce" stroke="none" />
+    <circle cx="946" cy="534" r="3" fill="#7dd6ce" stroke="none" />
+  </g>
+</svg>
