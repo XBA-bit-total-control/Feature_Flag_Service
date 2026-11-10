@@ -10,11 +10,11 @@ from pymongo import MongoClient
 from pymongo.errors import BulkWriteError, ServerSelectionTimeoutError
 
 from src.api import events
-from src.services import event_service
 from src.config import settings
 from src.database import get_mongo_database
 from src.event_indexes import ensure_event_indexes
 from src.main import app
+from src.services import event_service
 from src.tasks import event_tasks
 
 
@@ -120,6 +120,7 @@ async def test_events_api_writes_documents_and_creates_indexes(monkeypatch) -> N
 ])
 async def test_events_api_rejects_invalid_batch(body: dict, monkeypatch) -> None:
     """Некорректный пакет отклоняется до записи."""
+
     def unexpected_write(*args, **kwargs):
         pytest.fail("Сервис записи вызван для некорректного пакета")
 
@@ -141,6 +142,7 @@ async def test_events_api_handles_write_failure(
     error, expected_status: int, monkeypatch
 ) -> None:
     """Сбой записи возвращает код ошибки без внутренних данных MongoDB."""
+
     def fail_write(*args, **kwargs):
         raise error
 

@@ -89,6 +89,7 @@ async def test_provider_errors_use_template(context, response) -> None:
 @pytest.mark.asyncio
 async def test_missing_key_sends_no_request(context) -> None:
     """Без ключа HTTP-запрос не отправляется."""
+
     def handler(request):
         pytest.fail("Без ключа вызван внешний API")
 

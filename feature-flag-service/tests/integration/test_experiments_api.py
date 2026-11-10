@@ -2,17 +2,19 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
-from kombu.exceptions import OperationalError
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from kombu.exceptions import OperationalError
 from pymongo import MongoClient
 from pymongo.collection import Collection
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
-
+from src.api import resolve as resolve_api
+from src.celery_app import app as celery_app
 from src.config import settings
 from src.database import get_async_session, get_mongo_database
 from src.main import app
@@ -21,16 +23,13 @@ from src.models.audit_log import AuditLog
 from src.models.experiment import Experiment, ExperimentStatus
 from src.models.experiment_participant import ExperimentParticipant
 from src.models.user import UserRole
-from src.utils.jwt_handler import create_access_token
-from src.celery_app import app as celery_app
 from src.services import event_service
 from src.services import report_service
 from src.services.event_retention import _clean_experiment, cleanup_old_events
-from src.services.experiment_results_service import calculate_results
 from src.services.experiment_reports_service import complete_report, save_automatic_report
+from src.services.experiment_results_service import calculate_results
 from src.tasks import event_tasks
-from src.api import resolve as resolve_api
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from src.utils.jwt_handler import create_access_token
 
 
 pytestmark = pytest.mark.skipif(
