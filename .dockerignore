@@ -1,0 +1,11 @@
+**
+!feature-flag-service/
+!feature-flag-service/pyproject.toml
+!feature-flag-service/uv.lock
+!feature-flag-service/alembic.ini
+!feature-flag-service/alembic/
+!feature-flag-service/alembic/**
+!feature-flag-service/src/
+!feature-flag-service/src/**
+**/__pycache__/
+**/*.pyc
