@@ -35,7 +35,7 @@ jobs:
         run: uv run --locked alembic upgrade head
       - name: Run tests
         working-directory: feature-flag-service
-        run: uv run --locked pytest tests/unit tests/integration -q
+        run: uv run --locked python -m pytest tests/unit tests/integration -q
       - name: Build application image
         run: docker compose build init
       - name: Stop test infrastructure
