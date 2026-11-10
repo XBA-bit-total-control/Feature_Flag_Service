@@ -1,4 +1,58 @@
+x-app: &app
+  image: ${COMPOSE_PROJECT_NAME:-feature-flag-service}-app:local
+  pull_policy: never
+  environment:
+    POSTGRES_HOST: postgres
+    MONGO_HOST: mongo
+    RABBITMQ_HOST: rabbitmq
+    CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+    LLM_API_KEY: ${LLM_API_KEY:-}
+    LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.openai.com/v1}
+    LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    LLM_TIMEOUT: ${LLM_TIMEOUT:-30}
+    LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
+    LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-1100}
+
 services:
+  init:
+    <<: *app
+    build: .
+    command: ["sh", "-ec", "alembic upgrade head && python -m src.event_indexes"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "src.celery_app:app", "worker", "-Q", "events,analytics,reports", "--concurrency=2", "--loglevel=INFO"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  beat:
+    <<: *app
+    command: ["celery", "-A", "src.celery_app:app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -6,11 +60,11 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: feature_flags
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "feature_flags"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -18,11 +72,11 @@ services:
   mongo:
     image: mongo:4.4
     ports:
-      - "27017:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "echo db.runCommand('ping').ok"]
+      test: ["CMD", "mongo", "--quiet", "--eval", "quit(db.adminCommand({ping: 1}).ok ? 0 : 1)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -33,20 +87,21 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_UI_HOST_PORT:-15672}:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      test: ["CMD", "su-exec", "rabbitmq", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
