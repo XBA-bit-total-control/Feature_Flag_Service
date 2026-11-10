@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from kombu.exceptions import OperationalError as BrokerError
 from pymongo.database import Database
@@ -62,11 +62,15 @@ async def create_experiment(
 async def list_experiments(
         status: ExperimentStatus | None = None,
         flag_id: UUID | None = None,
+        limit: int = Query(default=100, ge=1, le=100),
+        offset: int = Query(default=0, ge=0, le=2**31 - 1),
         db: AsyncSession = Depends(get_db),
         user: User = Depends(get_current_user),
 ) -> list[Experiment]:
     """Получить свои эксперименты с фильтрами по статусу и флагу."""
-    return await experiment_service.list_experiments(db, user.id, status, flag_id)
+    return await experiment_service.list_experiments(
+        db, user.id, status, flag_id, limit=limit, offset=offset,
+    )
 
 
 @router.get("/{experiment_id}", response_model=ExperimentResponse)
