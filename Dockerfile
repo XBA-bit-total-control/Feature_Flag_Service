@@ -22,4 +22,4 @@ COPY feature-flag-service/alembic ./alembic
 COPY feature-flag-service/alembic.ini ./alembic.ini
 USER app
 EXPOSE 8000
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
