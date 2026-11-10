@@ -1,10 +1,10 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_async_session
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.utils.jwt_handler import decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -33,4 +33,18 @@ async def get_current_user(
             status_code=401,
             detail="Пользователь не найден",
         )
+    return user
+
+
+async def require_writer(user: User = Depends(get_current_user)) -> User:
+    """Разрешить запись разработчикам и администраторам."""
+    if user.role not in (UserRole.DEVELOPER, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Роль пользователя не позволяет изменять данные")
+    return user
+
+
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Разрешить управление ролями администратору."""
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Требуются права администратора")
     return user
