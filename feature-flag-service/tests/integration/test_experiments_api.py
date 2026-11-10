@@ -8,12 +8,13 @@ import httpx
 import pytest
 import pytest_asyncio
 from pymongo import MongoClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from src.config import settings
 from src.database import DATABASE_URL, get_async_session, get_mongo_database
 from src.main import app
-from src.models import Base, Flag, User
+from src.models import Base, Flag, FlagVariant, User
 from src.utils.jwt_handler import create_access_token
 from src.celery_app import app as celery_app
 from src.services import event_service
@@ -238,6 +239,44 @@ async def experiment_db(
                 await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_flag_pages_and_variant_uniqueness(experiment_db: tuple[UUID, UUID, UUID]) -> None:
+    """Проверить фильтрацию, порядок страниц и защиту от дублей на уровне БД."""
+    flag_id, owner_id, _ = experiment_db
+    headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=headers,
+    ) as client:
+        created = await client.post("/api/flags", json={"key": "alpha", "enabled": True})
+        assert created.status_code == 201, f"Не создан второй флаг: {created.text}"
+        first = await client.get("/api/flags?limit=1")
+        second = await client.get("/api/flags?limit=1&offset=1")
+        assert [row["key"] for row in first.json()] == ["alpha"], f"Неверная первая страница: {first.text}"
+        assert [row["key"] for row in second.json()] == ["checkout"], f"Неверная вторая страница: {second.text}"
+        filtered = await client.get("/api/flags?type=simple&enabled=true")
+        assert [row["key"] for row in filtered.json()] == ["alpha"], f"Фильтры не применены: {filtered.text}"
+        invalid = await client.get("/api/experiments?limit=0")
+        assert invalid.status_code == 422, f"Нулевой размер страницы принят: {invalid.text}"
+
+        variant = {"flag_id": str(flag_id), "variant_key": "A"}
+        first_variant = await client.post("/api/flags/checkout/variants", json=variant)
+        duplicate = await client.post("/api/flags/checkout/variants", json=variant)
+        other_variant = await client.post("/api/flags/alpha/variants", json=variant)
+        assert first_variant.status_code == other_variant.status_code == 201, (
+            f"Один ключ должен быть допустим на двух флагах: {first_variant.text}, {other_variant.text}"
+        )
+        assert duplicate.status_code == 409, f"API принял дубль на одном флаге: {duplicate.text}"
+
+    async for db in app.dependency_overrides[get_async_session]():
+        with pytest.raises(IntegrityError) as error:
+            async with db.begin_nested():
+                db.add(FlagVariant(flag_id=flag_id, variant_key="A"))
+                await db.flush()
+        assert getattr(error.value.orig.__cause__, "constraint_name", None) == "uq_flag_variants_flag_key", (
+            f"Ожидалось нарушение уникальности варианта: {error.value}"
+        )
 
 
 @pytest.mark.asyncio
