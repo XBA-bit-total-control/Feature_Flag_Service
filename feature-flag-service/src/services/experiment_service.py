@@ -40,6 +40,10 @@ async def _flush_experiment(db: AsyncSession, experiment: Experiment) -> Experim
         await db.flush()
     except IntegrityError as error:
         if getattr(error.orig, "sqlstate", None) == "23505":
+            if getattr(error.orig.__cause__, "constraint_name", None) == "uq_experiments_active_flag":
+                raise ExperimentConflictError(
+                    "У флага уже есть запущенный или приостановленный эксперимент"
+                ) from error
             raise ExperimentConflictError(
                 "Эксперимент с таким именем уже существует"
             ) from error
@@ -66,14 +70,17 @@ async def create_experiment(
 
 
 async def list_experiments(
-    db: AsyncSession, user_id: UUID, status: ExperimentStatus | None, flag_id: UUID | None
+    db: AsyncSession, user_id: UUID, status: ExperimentStatus | None, flag_id: UUID | None,
+    *, limit: int, offset: int,
 ) -> list[Experiment]:
     query = select(Experiment).where(Experiment.creator_id == user_id)
     if status is not None:
         query = query.where(Experiment.status == status)
     if flag_id is not None:
         query = query.where(Experiment.flag_id == flag_id)
-    result = await db.scalars(query.order_by(Experiment.created_at.desc(), Experiment.id))
+    result = await db.scalars(
+        query.order_by(Experiment.created_at.desc(), Experiment.id).offset(offset).limit(limit)
+    )
     return list(result)
 
 
