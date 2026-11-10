@@ -1,9 +1,13 @@
+import asyncio
 from datetime import datetime, timezone
 
 from celery import shared_task
 from pymongo.errors import ConnectionFailure
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.database import get_mongo_database
+from src.database import DATABASE_URL, get_mongo_database
+from src.services.event_retention import cleanup_old_events
 
 
 @shared_task(name="events.ping")
@@ -35,3 +39,25 @@ def process_pending_events() -> int:
         )
         processed_count += result.modified_count
     return processed_count
+
+
+@shared_task(
+    name="events.cleanup_old",
+    autoretry_for=(ConnectionFailure, OperationalError),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def cleanup_old_events_task() -> dict[str, int]:
+    """Очистить устаревшие события и вернуть число удалённых документов."""
+    async def run() -> dict[str, int]:
+        engine = create_async_engine(DATABASE_URL)
+        try:
+            return await cleanup_old_events(
+                async_sessionmaker(engine), get_mongo_database(), datetime.now(timezone.utc),
+            )
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(run())
