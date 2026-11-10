@@ -34,7 +34,7 @@ async def validate_event_links(db: AsyncSession, events: list[EventCreate]) -> N
                 FlagVariant.variant_key.in_({event.variant_key for _, event in linked}),
             ),
         )
-        .where(Experiment.id.in_({event.experiment_id for _, event in linked}))
+        .where(Experiment.id.in_({event.experiment_id for _, event in linked}), Flag.deleted_at.is_(None))
     )
     experiments = {}
     variants = set()
