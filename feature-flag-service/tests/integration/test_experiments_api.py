@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, Mock
@@ -8,6 +9,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from pymongo import MongoClient
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -15,6 +17,8 @@ from src.config import settings
 from src.database import DATABASE_URL, get_async_session, get_mongo_database
 from src.main import app
 from src.models import Base, Flag, FlagVariant, User
+from src.models.audit_log import AuditLog
+from src.models.user import UserRole
 from src.utils.jwt_handler import create_access_token
 from src.celery_app import app as celery_app
 from src.services import event_service
@@ -223,8 +227,8 @@ async def experiment_db(
                     expire_on_commit=False,
                     join_transaction_mode="create_savepoint",
                 ) as session:
-                    owner = User(email="owner@example.test", hashed_password="unused")
-                    other = User(email="other@example.test", hashed_password="unused")
+                    owner = User(email="owner@example.test", hashed_password="unused", role=UserRole.DEVELOPER)
+                    other = User(email="other@example.test", hashed_password="unused", role=UserRole.DEVELOPER)
                     session.add_all([owner, other])
                     await session.flush()
                     flag = Flag(key="checkout", type="ab", owner_id=owner.id)
@@ -239,6 +243,86 @@ async def experiment_db(
                 await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_roles_audit_and_soft_delete(experiment_db: tuple[UUID, UUID, UUID]) -> None:
+    """Проверить границы ролей и сохранение истории после удаления флага."""
+    flag_id, owner_id, admin_id = experiment_db
+    sessions = app.dependency_overrides[get_async_session]
+    async for db in sessions():
+        admin = await db.get(User, admin_id)
+        admin.role = UserRole.ADMIN
+
+    admin_headers = {"Authorization": f"Bearer {create_access_token(str(admin_id))}"}
+    owner_headers = {"Authorization": f"Bearer {create_access_token(str(owner_id))}"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=admin_headers,
+    ) as client:
+        registered = await client.post("/auth/register", json={
+            "email": "reader@example.com", "password": "integration-test-password",
+        })
+        assert registered.status_code == 201 and registered.json()["role"] == "viewer", (
+            f"Регистрация должна выдать роль viewer: {registered.text}"
+        )
+        viewer_id = registered.json()["id"]
+        viewer_headers = {"Authorization": f"Bearer {create_access_token(viewer_id)}"}
+        role_path = f"/auth/users/{viewer_id}/role"
+        denied = await client.post("/api/flags", headers=viewer_headers, json={"key": "forbidden"})
+        escalation = await client.patch(role_path, headers=viewer_headers, json={"role": "admin"})
+        assert denied.status_code == escalation.status_code == 403, (
+            f"Viewer получил право записи или смены роли: {denied.text}, {escalation.text}"
+        )
+        promoted = await client.patch(role_path, json={"role": "developer"})
+        profile = await client.get("/auth/me", headers=viewer_headers)
+        assert promoted.status_code == 200 and profile.json()["role"] == "developer", (
+            f"Роль не обновилась для существующего токена: {promoted.text}, {profile.text}"
+        )
+        changed = await client.patch("/api/flags/checkout", json={"enabled": True})
+        assert changed.status_code == 200, f"Администратор не может изменить чужой флаг: {changed.text}"
+        variant = await client.post("/api/flags/checkout/variants", json={
+            "flag_id": str(flag_id), "variant_key": "A",
+        })
+        assert variant.status_code == 201, f"Не создан вариант: {variant.text}"
+        variant_path = f"/api/flags/variants/{variant.json()['id']}"
+        created = await client.post("/api/experiments", json={
+            "name": "Archive test", "flag_id": str(flag_id), "primary_metric": "buy",
+        })
+        assert created.status_code == 201, f"Эксперимент не создан: {created.text}"
+        path = f"/api/experiments/{created.json()['id']}"
+        started = await client.patch(path, headers=owner_headers, json={"status": "running"})
+        assert started.status_code == 200, f"Владелец флага не смог запустить эксперимент: {started.text}"
+        denied_variant_delete = await client.delete(variant_path)
+        assert denied_variant_delete.status_code == 409, (
+            f"Удалён вариант активного эксперимента: {denied_variant_delete.text}"
+        )
+        denied_delete = await client.delete("/api/flags/checkout")
+        assert denied_delete.status_code == 409, f"Активный флаг был удалён: {denied_delete.text}"
+        stopped = await client.patch(path, json={"status": "stopped"})
+        assert stopped.status_code == 200, f"Эксперимент не остановлен: {stopped.text}"
+        deleted = await client.delete("/api/flags/checkout")
+        assert deleted.status_code == 204, f"Флаг не архивирован: {deleted.text}"
+        hidden = await client.post("/resolve", json={"flag_key": "checkout", "user_id": "test"})
+        history = await client.get(path, headers=owner_headers)
+        assert hidden.status_code == 404 and history.status_code == 200, (
+            f"Флаг остался доступен или история потеряна: {hidden.text}, {history.text}"
+        )
+        archived_variant = await client.get(variant_path)
+        assert archived_variant.status_code == 404, f"Вариант архивного флага доступен: {archived_variant.text}"
+        recreated = await client.post("/api/flags", json={"key": "checkout"})
+        assert recreated.status_code == 409, f"Ключ архивного флага был переиспользован: {recreated.text}"
+
+    async for db in sessions():
+        deletes = list(await db.scalars(select(AuditLog).where(AuditLog.action == "flag.deleted")))
+        assert len(deletes) == 1 and deletes[0].user_id == admin_id, (
+            "Аудит должен содержать только успешное удаление и ID администратора"
+        )
+        assert json.loads(deletes[0].old_value)["deleted_at"] is None, "Потеряно состояние до удаления"
+        assert json.loads(deletes[0].new_value)["deleted_at"], "Не записана дата мягкого удаления"
+        role_change = await db.scalar(select(AuditLog).where(AuditLog.action == "user.role_changed"))
+        assert role_change is not None and json.loads(role_change.new_value) == {"role": "developer"}, (
+            "В журнале нет новой роли или в запись попали посторонние данные"
+        )
 
 
 @pytest.mark.asyncio
