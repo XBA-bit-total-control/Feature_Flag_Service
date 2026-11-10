@@ -1,6 +1,7 @@
 import json
 import os
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 from kombu.exceptions import OperationalError
 from uuid import UUID, uuid4
@@ -9,24 +10,29 @@ import httpx
 import pytest
 import pytest_asyncio
 from pymongo import MongoClient
+from pymongo.collection import Collection
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config import settings
 from src.database import DATABASE_URL, get_async_session, get_mongo_database
 from src.main import app
 from src.models import Base, Flag, FlagVariant, User
 from src.models.audit_log import AuditLog
+from src.models.experiment import Experiment, ExperimentStatus
+from src.models.experiment_participant import ExperimentParticipant
 from src.models.user import UserRole
 from src.utils.jwt_handler import create_access_token
 from src.celery_app import app as celery_app
 from src.services import event_service
 from src.services import report_service
+from src.services.event_retention import _clean_experiment, cleanup_old_events
+from src.services.experiment_results_service import calculate_results
 from src.services.experiment_reports_service import complete_report, save_automatic_report
 from src.tasks import event_tasks
 from src.api import resolve as resolve_api
-from pymongo.errors import ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 
 pytestmark = pytest.mark.skipif(
@@ -243,6 +249,82 @@ async def experiment_db(
                 await transaction.rollback()
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.environ.get("RUN_MONGO_INTEGRATION") != "1",
+    reason="Нужна явно включённая проверка MongoDB",
+)
+async def test_event_retention_preserves_statistics(
+    experiment_db: tuple[UUID, UUID, UUID], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Проверить пороги удаления, повтор после сбоя и неизменность пересчёта."""
+    flag_id, owner_id, _ = experiment_db
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    async for db in app.dependency_overrides[get_async_session]():
+        sessions = async_sessionmaker(
+            db.bind, join_transaction_mode="create_savepoint", expire_on_commit=False,
+        )
+        active = Experiment(name="Active retention", flag_id=flag_id, creator_id=owner_id,
+                            primary_metric="buy", status=ExperimentStatus.RUNNING)
+        terminal = Experiment(name="Terminal retention", flag_id=flag_id, creator_id=owner_id,
+                              primary_metric="buy", status=ExperimentStatus.STOPPED)
+        db.add_all([active, terminal, FlagVariant(flag_id=flag_id, variant_key="A"),
+                    FlagVariant(flag_id=flag_id, variant_key="B")])
+        await db.flush()
+
+    with MongoClient(host=settings.MONGO_HOST, port=settings.MONGO_PORT,
+                     serverSelectionTimeoutMS=3000) as client:
+        mongo = client[f"codex_retention_{uuid4().hex}"]
+        try:
+            def event(experiment, user_id, age, *, processed=True, **extra):
+                return {
+                    "experiment_id": str(experiment.id), "flag_key": "checkout",
+                    "variant_key": "A", "user_id": user_id, "event_type": "impression",
+                    "timestamp": now - timedelta(days=age), "processed": processed, **extra,
+                }
+
+            old_impression = event(active, "u1", 40)
+            old_conversion = event(active, "u2", 35, event_type="conversion", event_name="buy")
+            mongo.events.insert_many([
+                old_impression, event(active, "u1", 1, event_type="conversion", event_name="buy"),
+                old_conversion, event(active, "u2", 45),
+                event(active, "pending", 40, processed=False), event(active, "boundary", 30),
+                event(terminal, "expired", 91, processed=False), event(terminal, "keep", 90),
+            ])
+
+            async def counts():
+                async with sessions.begin() as db:
+                    rows = await calculate_results(db, mongo, active.id)
+                    return [(row.sample_size, row.conversions) for row in rows]
+
+            before = await counts()
+            assert before == [(4, 2), (0, 0)], f"Неверные исходные счётчики: {before}"
+            with monkeypatch.context() as scoped:
+                scoped.setattr(Collection, "delete_many", Mock(side_effect=ConnectionFailure("test")))
+                with pytest.raises(ConnectionFailure):
+                    await _clean_experiment(sessions, mongo.events, active.id, now)
+            async with sessions() as db:
+                archived = await db.scalars(select(ExperimentParticipant).where(
+                    ExperimentParticipant.experiment_id == active.id,
+                ))
+                assert len(archived.all()) == 2, "Состояние не зафиксировано до сбоя MongoDB"
+            assert await counts() == before, "Исходные и компактные данные задвоили статистику"
+
+            result = await cleanup_old_events(sessions, mongo, now)
+            assert result == {"active_removed": 3, "terminal_removed": 1, "invalid_experiments": 0}, (
+                f"Удалены неверные события: {result}"
+            )
+            kept = set(mongo.events.distinct("user_id"))
+            assert kept == {"u1", "pending", "boundary", "keep"}, f"Неверный остаток: {kept}"
+            assert await counts() == before, "После очистки изменились счётчики эксперимента"
+            repeated = await cleanup_old_events(sessions, mongo, now)
+            assert repeated["active_removed"] == repeated["terminal_removed"] == 0, (
+                f"Повторное выполнение снова удалило события: {repeated}"
+            )
+        finally:
+            mongo.events.drop()
 
 
 @pytest.mark.asyncio
