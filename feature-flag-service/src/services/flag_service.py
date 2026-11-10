@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -35,10 +36,16 @@ async def get_flag_by_key(
     return result.scalar_one_or_none()
 
 
-async def get_all_flags(db: AsyncSession) -> list[Flag]:
-    """Получить список всех флагов."""
-    result = await db.execute(select(Flag))
-    return list(result.scalars().all())
+async def get_all_flags(
+    db: AsyncSession, *, flag_type: str | None, enabled: bool | None, limit: int, offset: int,
+) -> list[Flag]:
+    """Получить страницу флагов с фильтрами по типу и доступности."""
+    query = select(Flag)
+    if flag_type is not None:
+        query = query.where(Flag.type == flag_type)
+    if enabled is not None:
+        query = query.where(Flag.enabled == enabled)
+    return list(await db.scalars(query.order_by(Flag.key).offset(offset).limit(limit)))
 
 
 async def update_flag(
@@ -78,9 +85,7 @@ async def create_variant(
     await ensure_variant_key_available(db, data.flag_id, data.variant_key)
     variant = FlagVariant(**data.model_dump())
     db.add(variant)
-    await db.flush()
-    await db.refresh(variant)
-    return variant
+    return await _flush_variant(db, variant)
 
 
 async def get_variants(
@@ -125,7 +130,16 @@ async def update_variant(
         if value is None and field != "description":
             raise ValueError(f"Поле '{field}' не может быть null")
         setattr(variant, field, value)
-    await db.flush()
+    return await _flush_variant(db, variant)
+
+
+async def _flush_variant(db: AsyncSession, variant: FlagVariant) -> FlagVariant:
+    try:
+        await db.flush()
+    except IntegrityError as error:
+        if getattr(error.orig.__cause__, "constraint_name", None) == "uq_flag_variants_flag_key":
+            raise ConflictError("Вариант с таким ключом уже существует у флага") from error
+        raise
     await db.refresh(variant)
     return variant
 
