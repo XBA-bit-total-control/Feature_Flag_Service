@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUN_POSTGRES_INTEGRATION: "1"
+      RUN_MONGO_INTEGRATION: "1"
+      POSTGRES_HOST_PORT: "15440"
+      POSTGRES_PORT: "15440"
+      MONGO_HOST_PORT: "27030"
+      MONGO_PORT: "27030"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.23"
+      - name: Start PostgreSQL and MongoDB
+        run: docker compose up -d --wait --wait-timeout 150 postgres mongo
+      - name: Install locked dependencies
+        working-directory: feature-flag-service
+        run: uv sync --locked --python 3.12
+      - name: Apply database migrations
+        working-directory: feature-flag-service
+        run: uv run --locked alembic upgrade head
+      - name: Run tests
+        working-directory: feature-flag-service
+        run: uv run --locked pytest tests/unit tests/integration -q
+      - name: Build application image
+        run: docker compose build init
+      - name: Stop test infrastructure
+        if: always()
+        run: docker compose down --volumes
