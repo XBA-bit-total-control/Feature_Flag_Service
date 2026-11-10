@@ -1,5 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
+from itertools import chain
 from math import erfc, sqrt
 from statistics import NormalDist
 from uuid import UUID
@@ -39,12 +41,40 @@ class ComparisonResult:
     enough_data: bool
 
 
+@dataclass
+class ParticipantEvents:
+    """Минимальное состояние участника для подсчёта показа и конверсии."""
+
+    user_id: str
+    variant_key: str
+    impression_at: datetime | None = None
+    conversion_at: datetime | None = None
+
+
+def summarize_participants(
+    events: Iterable[EventCreate], experiment_id: UUID, primary_metric: str,
+) -> Iterable[ParticipantEvents]:
+    """Свернуть повторы до первого показа и последней целевой конверсии."""
+    participants: dict[tuple[str, str], ParticipantEvents] = {}
+    for event in events:
+        if event.experiment_id != experiment_id:
+            continue
+        key = (event.user_id, event.variant_key or "")
+        participant = participants.setdefault(key, ParticipantEvents(*key))
+        if event.event_type == "impression":
+            participant.impression_at = min(participant.impression_at or event.timestamp, event.timestamp)
+        if event.event_type == "conversion" and event.event_name == primary_metric:
+            participant.conversion_at = max(participant.conversion_at or event.timestamp, event.timestamp)
+    return participants.values()
+
+
 def count_participants(
     events: Iterable[EventCreate],
     experiment_id: UUID,
     primary_metric: str,
     control_key: str,
     treatment_key: str,
+    *, archived: Iterable[ParticipantEvents] = (),
 ) -> tuple[VariantCounts, VariantCounts]:
     """Посчитать участников с показом и последующей целевой конверсией."""
     if not primary_metric or not control_key or not treatment_key:
@@ -54,19 +84,19 @@ def count_participants(
     assignments = {}
     impressions = {}
     conversions = {}
-    for event in events:
-        if event.experiment_id != experiment_id:
-            continue
-        if event.variant_key not in (control_key, treatment_key):
+    current = summarize_participants(events, experiment_id, primary_metric)
+    for participant in chain(archived, current):
+        user_id, variant_key = participant.user_id, participant.variant_key
+        if variant_key not in (control_key, treatment_key):
             raise ValueError("В событии указан вариант вне сравниваемой пары")
-        if event.user_id in assignments and assignments[event.user_id] != event.variant_key:
+        if user_id in assignments and assignments[user_id] != variant_key:
             raise ValueError("Один участник оказался в разных вариантах эксперимента")
-        assignments[event.user_id] = event.variant_key
-        key = (event.user_id, event.variant_key)
-        if event.event_type == "impression":
-            impressions[key] = min(impressions.get(key, event.timestamp), event.timestamp)
-        if event.event_type == "conversion" and event.event_name == primary_metric:
-            conversions[key] = max(conversions.get(key, event.timestamp), event.timestamp)
+        assignments[user_id] = variant_key
+        key = (user_id, variant_key)
+        if (timestamp := participant.impression_at) is not None:
+            impressions[key] = min(impressions.get(key, timestamp), timestamp)
+        if (timestamp := participant.conversion_at) is not None:
+            conversions[key] = max(conversions.get(key, timestamp), timestamp)
     counts = []
     for variant in (control_key, treatment_key):
         participants = [key for key in impressions if key[1] == variant]
