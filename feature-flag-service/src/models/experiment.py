@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin
@@ -26,6 +26,10 @@ class Experiment(Base, TimestampMixin):
         CheckConstraint(
             "status IN ('draft', 'running', 'paused', 'completed', 'stopped')",
             name="ck_experiments_status",
+        ),
+        Index(
+            "uq_experiments_active_flag", "flag_id", unique=True,
+            postgresql_where=text("status IN ('running', 'paused')"),
         ),
     )
 
