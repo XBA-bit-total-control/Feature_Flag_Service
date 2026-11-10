@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: feature-flags-init
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: init
+          image: feature-flag-service:local
+          imagePullPolicy: Never
+          command: [sh, -ec, "alembic upgrade head && python -m src.event_indexes"]
+          envFrom:
+            - configMapRef: {name: feature-flags-config}
+            - secretRef: {name: feature-flags-secret}
