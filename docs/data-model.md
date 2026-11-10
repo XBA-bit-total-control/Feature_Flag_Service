@@ -4,7 +4,7 @@ PostgreSQL хранит настройки, агрегаты и историю �
 
 ## PostgreSQL
 
-<img src="database-schema.svg" alt="Схема базы данных" width="700" height="600">
+<img src="database-schema.svg" alt="Схема базы данных" width="1000" height="900">
 
 На схеме показаны таблицы приложения. Служебная таблица `alembic_version` хранит номер применённой ревизии миграций.
 
