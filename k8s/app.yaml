@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: api}
+  template:
+    metadata:
+      labels: {app: api}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: api
+          image: feature-flag-service:local
+          imagePullPolicy: Never
+          ports:
+            - {name: http, containerPort: 8000}
+          envFrom:
+            - configMapRef: {name: feature-flags-config}
+            - secretRef: {name: feature-flags-secret}
+          startupProbe:
+            httpGet: {path: /api/health/live, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /api/health/live, port: http}
+          readinessProbe:
+            httpGet: {path: /api/health/ready, port: http}
+            timeoutSeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector: {app: api}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  selector:
+    matchLabels: {app: worker}
+  template:
+    metadata:
+      labels: {app: worker}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: worker
+          image: feature-flag-service:local
+          imagePullPolicy: Never
+          command: [celery, -A, "src.celery_app:app", worker, -Q, "events,analytics,reports", "--concurrency=2", "--loglevel=INFO"]
+          envFrom:
+            - configMapRef: {name: feature-flags-config}
+            - secretRef: {name: feature-flags-secret}
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 768Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: beat}
+  template:
+    metadata:
+      labels: {app: beat}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: beat
+          image: feature-flag-service:local
+          imagePullPolicy: Never
+          command: [celery, -A, "src.celery_app:app", beat, "--schedule=/tmp/celerybeat-schedule", "--loglevel=INFO"]
+          envFrom:
+            - configMapRef: {name: feature-flags-config}
+            - secretRef: {name: feature-flags-secret}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: worker}
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 70}
