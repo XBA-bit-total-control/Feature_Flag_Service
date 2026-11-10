@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import asdict
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.experiment import Experiment
 from src.models.experiment_report import ExperimentReport
+from src.observability import log_event
 from src.services import report_service
 from src.services.experiment_results_service import get_results
 from src.services.experiment_service import ExperimentConflictError, ExperimentNotFoundError
@@ -131,4 +133,6 @@ async def complete_report(db: AsyncSession, report_id: UUID) -> ExperimentReport
     report.fallback_reason = generated.fallback_reason
     report.status = "completed"
     await db.flush()
+    if generated.fallback_reason is not None:
+        log_event("reports.llm_fallback", level=logging.WARNING, reason=generated.fallback_reason)
     return report
