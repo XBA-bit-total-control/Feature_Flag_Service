@@ -7,6 +7,7 @@ x-app: &app
     RABBITMQ_HOST: rabbitmq
     CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
     JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
     LLM_API_KEY: ${LLM_API_KEY:-}
     LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.openai.com/v1}
     LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
@@ -34,6 +35,12 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health/ready', timeout=4).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   worker:
     <<: *app
@@ -68,6 +75,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   mongo:
     image: mongo:4.4
