@@ -1,10 +1,10 @@
 from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
-from starlette.middleware.base import RequestResponseEndpoint
 
 from src.api import auth, events, experiments, flags, health, resolve
 from src.observability import log_event
+from starlette.middleware.base import RequestResponseEndpoint
 
 
 app = FastAPI(
@@ -34,6 +34,7 @@ async def observe_request(request: Request, call_next: RequestResponseEndpoint) 
             handler=getattr(route, "name", None), status_code=status_code,
             duration_ms=round((perf_counter() - start) * 1000, 2),
         )
+
 
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(auth.router, tags=["auth"])

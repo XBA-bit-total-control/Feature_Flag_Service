@@ -2,8 +2,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from pymongo.database import Database
 from kombu.exceptions import OperationalError
+from pymongo.database import Database
+
 from src.celery_app import app as celery_app
 from src.observability import log_event
 from src.schemas.event import (
@@ -33,9 +34,9 @@ def _prepare_event_document(event: EventCreate) -> dict[str, Any]:
 
 
 def save_event(
-        mongo_database: Database[dict[str, Any]],
-        event: EventCreate,
-        collection_name: str = "events",
+    mongo_database: Database[dict[str, Any]],
+    event: EventCreate,
+    collection_name: str = "events",
 ) -> EventResponse:
     """Сохранить одно событие в MongoDB."""
     collection = mongo_database[collection_name]
@@ -45,9 +46,9 @@ def save_event(
 
 
 def save_events_batch(
-        mongo_database: Database[dict[str, Any]],
-        events: list[EventCreate],
-        collection_name: str = "events",
+    mongo_database: Database[dict[str, Any]],
+    events: list[EventCreate],
+    collection_name: str = "events",
 ) -> EventBatchResponse:
     """Сохранить пакет событий в MongoDB."""
     if not events:

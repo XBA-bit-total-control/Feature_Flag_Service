@@ -49,9 +49,9 @@ def _experiment_errors() -> Iterator[None]:
 
 @router.post("", response_model=ExperimentResponse, status_code=201)
 async def create_experiment(
-        data: ExperimentCreate,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(require_writer),
+    data: ExperimentCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_writer),
 ) -> Experiment:
     """Создать черновик эксперимента для своего флага."""
     with _experiment_errors():
@@ -60,12 +60,12 @@ async def create_experiment(
 
 @router.get("", response_model=list[ExperimentResponse])
 async def list_experiments(
-        status: ExperimentStatus | None = None,
-        flag_id: UUID | None = None,
-        limit: int = Query(default=100, ge=1, le=100),
-        offset: int = Query(default=0, ge=0, le=2**31 - 1),
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+    status: ExperimentStatus | None = None,
+    flag_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=2 ** 31 - 1),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[Experiment]:
     """Получить свои эксперименты с фильтрами по статусу и флагу."""
     return await experiment_service.list_experiments(
@@ -75,9 +75,9 @@ async def list_experiments(
 
 @router.get("/{experiment_id}", response_model=ExperimentResponse)
 async def get_experiment(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> Experiment:
     """Получить параметры и состояние эксперимента."""
     with _experiment_errors():
@@ -86,10 +86,10 @@ async def get_experiment(
 
 @router.patch("/{experiment_id}", response_model=ExperimentResponse)
 async def update_experiment(
-        experiment_id: UUID,
-        data: ExperimentUpdate | ExperimentStatusUpdate,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(require_writer),
+    experiment_id: UUID,
+    data: ExperimentUpdate | ExperimentStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_writer),
 ) -> Experiment:
     """Изменить параметры черновика или выполнить переход статуса."""
     with _experiment_errors():
@@ -104,9 +104,9 @@ async def update_experiment(
 
 @router.delete("/{experiment_id}", status_code=204)
 async def delete_experiment(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(require_writer),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_writer),
 ) -> None:
     """Удалить черновик эксперимента."""
     with _experiment_errors():
@@ -115,9 +115,9 @@ async def delete_experiment(
 
 @router.get("/{experiment_id}/results", response_model=list[ExperimentResultResponse])
 async def read_results(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[ExperimentResult]:
     """Получить последний сохранённый снимок результатов своего эксперимента."""
     with _experiment_errors():
@@ -127,10 +127,10 @@ async def read_results(
 
 @router.post("/{experiment_id}/results", response_model=list[ExperimentResultResponse])
 async def recalculate_results(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(require_writer),
-        mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_writer),
+    mongo: Database[dict[str, Any]] = Depends(get_mongo_database),
 ) -> list[ExperimentResult]:
     """Пересчитать результаты своего эксперимента по сохранённым событиям."""
     with _experiment_errors():
@@ -143,9 +143,9 @@ async def recalculate_results(
 
 @router.get("/{experiment_id}/template/reports", response_model=TemplateReportResponse)
 async def read_template_report(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> TemplateReportResponse:
     """Получить шаблонный отчёт для своего эксперимента."""
     with _experiment_errors():
@@ -156,9 +156,9 @@ async def read_template_report(
 
 @router.post("/{experiment_id}/llm/reports", response_model=ExperimentReportResponse, status_code=202)
 async def create_llm_report(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(require_writer),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_writer),
 ) -> ExperimentReport:
     """Поставить генерацию LLM-отчёта для своего эксперимента в очередь."""
     with _experiment_errors():
@@ -180,9 +180,9 @@ async def create_llm_report(
 
 @router.get("/{experiment_id}/reports", response_model=list[ExperimentReportResponse])
 async def read_reports(
-        experiment_id: UUID,
-        db: AsyncSession = Depends(get_db),
-        user: User = Depends(get_current_user),
+    experiment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[ExperimentReport]:
     """Получить историю отчётов своего эксперимента."""
     with _experiment_errors():

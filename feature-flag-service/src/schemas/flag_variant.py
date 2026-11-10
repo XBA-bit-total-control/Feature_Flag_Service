@@ -50,6 +50,7 @@ class FlagVariantUpdate(BaseModel):
 
     model_config = {"extra": "forbid"}
 
+
 class FlagVariantResponse(BaseModel):
     """Ответ API с данными варианта."""
 

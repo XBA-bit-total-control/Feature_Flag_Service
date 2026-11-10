@@ -1,7 +1,8 @@
 from enum import Enum
 
-from sqlalchemy import String, Text, DateTime, func, Enum as SQLAlchemyEnum
+from sqlalchemy import String, Text, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from src.models.base import Base, TimestampMixin
 
 

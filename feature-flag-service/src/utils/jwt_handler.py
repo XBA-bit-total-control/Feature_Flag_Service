@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from jose import JWTError, jwt
+
 from src.config import settings
 
 

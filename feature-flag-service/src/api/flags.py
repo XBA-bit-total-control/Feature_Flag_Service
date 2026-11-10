@@ -18,6 +18,7 @@ from src.schemas.flag_variant import (
 from src.services import flag_service, targeting_service
 from src.services.audit_service import record_change, snapshot
 
+
 router = APIRouter()
 
 
@@ -51,7 +52,7 @@ async def get_all_flags(
     flag_type: str | None = Query(default=None, alias="type", min_length=1, max_length=50),
     enabled: bool | None = None,
     limit: int = Query(default=100, ge=1, le=100),
-    offset: int = Query(default=0, ge=0, le=2**31 - 1),
+    offset: int = Query(default=0, ge=0, le=2 ** 31 - 1),
     db: AsyncSession = Depends(get_async_session),
 ) -> list[FlagResponse]:
     """Получить страницу флагов с фильтрами."""

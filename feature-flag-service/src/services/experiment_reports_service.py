@@ -17,7 +17,7 @@ from src.services.statistics_service import ComparisonResult, VariantCounts
 
 
 async def _build_report_context(
-        db: AsyncSession, experiment_id: UUID, *, lock: bool = False
+    db: AsyncSession, experiment_id: UUID, *, lock: bool = False
 ) -> ReportContext:
     experiment = await db.get(
         Experiment, experiment_id, with_for_update=lock, populate_existing=True
@@ -56,7 +56,7 @@ async def build_template_report(db: AsyncSession, experiment_id: UUID) -> str:
 
 
 async def request_llm_report(
-        db: AsyncSession, experiment_id: UUID
+    db: AsyncSession, experiment_id: UUID
 ) -> tuple[ExperimentReport, bool]:
     """Получить ожидающее задание для снимка или создать новое."""
     context = await _build_report_context(db, experiment_id, lock=True)

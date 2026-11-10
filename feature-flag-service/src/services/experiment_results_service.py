@@ -39,7 +39,7 @@ async def get_results(db: AsyncSession, experiment_id: UUID) -> list[ExperimentR
 
 
 async def calculate_results(
-        db: AsyncSession, mongo: Database[dict[str, Any]], experiment_id: UUID
+    db: AsyncSession, mongo: Database[dict[str, Any]], experiment_id: UUID
 ) -> list[ExperimentResult]:
     """Заменить последний снимок результатов в одной транзакции PostgreSQL."""
     experiment = await db.get(Experiment, experiment_id, with_for_update=True, populate_existing=True)

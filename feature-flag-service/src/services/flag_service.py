@@ -19,8 +19,8 @@ class ConflictError(ValueError):
 
 
 async def create_flag(
-        db: AsyncSession,
-        data: FlagCreate, user_id: UUID
+    db: AsyncSession,
+    data: FlagCreate, user_id: UUID
 ) -> Flag:
     """Создать новый feature-флаг."""
     flag = Flag(**data.model_dump(), owner_id=user_id)
@@ -29,8 +29,8 @@ async def create_flag(
 
 
 async def get_flag_by_key(
-        db: AsyncSession,
-        key: str, *, include_deleted: bool = False, lock: bool = False,
+    db: AsyncSession,
+    key: str, *, include_deleted: bool = False, lock: bool = False,
 ) -> Flag | None:
     """Получить флаг по уникальному ключу."""
     query = select(Flag).where(Flag.key == key)
@@ -55,9 +55,9 @@ async def get_all_flags(
 
 
 async def update_flag(
-        db: AsyncSession,
-        flag: Flag,
-        data: FlagUpdate
+    db: AsyncSession,
+    flag: Flag,
+    data: FlagUpdate
 ) -> Flag:
     """Обновить feature-флаг."""
     update_data = data.model_dump(exclude_unset=True)
@@ -106,8 +106,8 @@ async def ensure_no_active_experiment(db: AsyncSession, flag_id: UUID) -> None:
 
 
 async def create_variant(
-        db: AsyncSession,
-        data: FlagVariantCreate
+    db: AsyncSession,
+    data: FlagVariantCreate
 ) -> FlagVariant:
     """Создать вариант A/B теста."""
     await ensure_no_active_experiment(db, data.flag_id)
@@ -118,8 +118,8 @@ async def create_variant(
 
 
 async def get_variants(
-        db: AsyncSession,
-        flag_id: UUID
+    db: AsyncSession,
+    flag_id: UUID
 ) -> list[FlagVariant]:
     """Получить список вариантов для флага."""
     result = await db.execute(
@@ -131,7 +131,7 @@ async def get_variants(
 
 
 async def get_variant_by_id(
-        db: AsyncSession, variant_id: UUID, *, lock: bool = False,
+    db: AsyncSession, variant_id: UUID, *, lock: bool = False,
 ) -> FlagVariant | None:
     """Получить вариант по ID."""
     query = select(FlagVariant).join(Flag).options(selectinload(FlagVariant.flag)).where(
@@ -144,9 +144,9 @@ async def get_variant_by_id(
 
 
 async def update_variant(
-        db: AsyncSession,
-        variant: FlagVariant,
-        data: FlagVariantUpdate
+    db: AsyncSession,
+    variant: FlagVariant,
+    data: FlagVariantUpdate
 ) -> FlagVariant:
     """Обновить вариант A/B теста."""
     update_data = data.model_dump(exclude_unset=True)
@@ -178,8 +178,8 @@ async def _flush_variant(db: AsyncSession, variant: FlagVariant) -> FlagVariant:
 
 
 async def delete_variant(
-        db: AsyncSession,
-        variant: FlagVariant
+    db: AsyncSession,
+    variant: FlagVariant
 ) -> None:
     """Удалить вариант A/B теста."""
     await ensure_no_active_experiment(db, variant.flag_id)
@@ -188,10 +188,10 @@ async def delete_variant(
 
 
 async def ensure_variant_key_available(
-        db: AsyncSession,
-        flag_id: UUID,
-        variant_key: str,
-        exclude_id: UUID | None = None,
+    db: AsyncSession,
+    flag_id: UUID,
+    variant_key: str,
+    exclude_id: UUID | None = None,
 ) -> None:
     """Проверить доступность ключа варианта у флага, исключая указанный вариант."""
     query = select(FlagVariant.id).where(

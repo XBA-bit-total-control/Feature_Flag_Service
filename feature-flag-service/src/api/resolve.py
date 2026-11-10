@@ -15,6 +15,7 @@ from src.services.resolve_service import (
     ResolveConfigurationError, ResolveNotFoundError, resolve_flag as resolve_service,
 )
 
+
 router = APIRouter()
 
 

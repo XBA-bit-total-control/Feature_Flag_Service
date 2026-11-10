@@ -3,10 +3,10 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 import httpx
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from src.config import Settings, settings
 from src.services.statistics_service import ComparisonResult, VariantCounts
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 
 @dataclass(frozen=True)
@@ -102,6 +102,7 @@ _REPORT_INSTRUCTIONS = (
 
 def build_report_data(context: ReportContext) -> dict[str, Any]:
     """Подготовить структурированные факты без шаблонного текста и выводов."""
+
     def variant_data(key: str, counts: VariantCounts) -> dict[str, Any]:
         return {
             "variant": key,

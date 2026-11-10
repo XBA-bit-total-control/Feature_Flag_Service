@@ -11,6 +11,7 @@ from src.schemas.user import UserCreate, UserResponse, TokenResponse, UserRoleUp
 from src.services.audit_service import record_change
 from src.utils.jwt_handler import hash_password, create_access_token
 
+
 router = APIRouter()
 
 

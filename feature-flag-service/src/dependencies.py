@@ -7,6 +7,7 @@ from src.database import get_async_session
 from src.models.user import User, UserRole
 from src.utils.jwt_handler import decode_access_token
 
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 

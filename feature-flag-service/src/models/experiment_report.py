@@ -1,11 +1,10 @@
 import uuid
-from datetime import datetime
-
-from sqlalchemy import String, Text, DateTime, func, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy import Integer
 from typing import Any
+
+from sqlalchemy import Integer
+from sqlalchemy import String, Text, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin
 

@@ -51,6 +51,7 @@ def process_pending_events() -> int:
 )
 def cleanup_old_events_task() -> dict[str, int]:
     """Очистить устаревшие события и вернуть число удалённых документов."""
+
     async def run() -> dict[str, int]:
         engine = create_async_engine(DATABASE_URL)
         try:
