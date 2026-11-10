@@ -1,7 +1,6 @@
 import uuid
-from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, func, Float, ForeignKey
+from sqlalchemy import String, Text, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.models.base import Base, TimestampMixin
@@ -11,6 +10,9 @@ class FlagVariant(Base, TimestampMixin):
     """Варианты A/B тестов для feature-флагов."""
 
     __tablename__ = "flag_variants"
+    __table_args__ = (
+        UniqueConstraint("flag_id", "variant_key", name="uq_flag_variants_flag_key"),
+    )
 
     variant_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
